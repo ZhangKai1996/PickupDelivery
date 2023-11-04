@@ -4,11 +4,11 @@ def parse_args():
 
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
     # Environment
-    parser.add_argument("--num-agents", type=int, default=5, help="number of the drone")
+    parser.add_argument("--num-agents", type=int, default=15, help="number of the drone")
     parser.add_argument("--size", type=int, default=30, help="the size of grid world")
     parser.add_argument("--ratio-walls", type=float, default=.1, help="ratio of barriers")
     parser.add_argument("--num-buyers", type=int, default=30, help="number of buyers")
-    parser.add_argument("--num-merchants", type=int, default=10, help="number of merchants")
+    parser.add_argument("--num-merchants", type=int, default=20, help="number of merchants")
     parser.add_argument("--time-flow", type=bool, default=False, help="number of buyers")
     # Basic training parameters
     parser.add_argument("--max-episode-len", type=int, default=100, help="maximum episode length")

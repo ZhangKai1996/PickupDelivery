@@ -1,4 +1,4 @@
-from math import fabs
+import math
 from bisect import bisect
 
 
@@ -48,18 +48,18 @@ class SIPPGrid(object):
 
 class SIPPGraph(object):
     def __init__(self, env):
-        self.dimensions = [env.size, env.size]
+        self.size = env.size
 
         self.obstacles = env.walls
-        self.dyn_obstacles = {}
+        self.dyn_obstacles = env.dynamic_obs
 
         self.graph = {}
         self.init_graph()
         self.init_intervals()
 
     def init_graph(self):
-        for i in range(self.dimensions[0]):
-            for j in range(self.dimensions[1]):
+        for i in range(self.size):
+            for j in range(self.size):
                 grid_dict = {(i, j): SIPPGrid()}
                 self.graph.update(grid_dict)
 
@@ -76,25 +76,22 @@ class SIPPGraph(object):
                 self.graph[position].split_interval(t, last_t)
 
     def is_valid_position(self, position):
-        dim_check = position[0] in range(self.dimensions[0]) and position[1] in range(self.dimensions[1])
+        dim_check = position[0] in range(self.size) and position[1] in range(self.size)
         obs_check = position not in self.obstacles
         return dim_check and obs_check
 
     def get_valid_neighbours(self, position):
+        motions = [
+            (-1, 1), (0, 1), (1, 1),
+            (-1, 0), (0, 0), (1, 0),
+            (-1, -1), (0, -1), (1, -1)
+        ]
+
         neighbour_list = []
-
-        up = (position[0], position[1] + 1)
-        if self.is_valid_position(up): neighbour_list.append(up)
-
-        down = (position[0], position[1] - 1)
-        if self.is_valid_position(down): neighbour_list.append(down)
-
-        left = (position[0] - 1, position[1])
-        if self.is_valid_position(left): neighbour_list.append(left)
-
-        right = (position[0] + 1, position[1])
-        if self.is_valid_position(right): neighbour_list.append(right)
-
+        for u in motions:
+            up = (position[0]+u[0], position[1] + u[1])
+            if self.is_valid_position(up):
+                neighbour_list.append(up)
         return neighbour_list
 
 
@@ -124,12 +121,12 @@ class SIPPPlanner(SIPPGraph):
         return successors
 
     def get_heuristic(self, position):
-        return fabs(position[0] - self.goal[0]) + fabs(position[1] - self.goal[1])
+        return math.fabs(position[0] - self.goal[0]) + math.fabs(position[1] - self.goal[1])
 
     def compute_plan(self):
         self.open = []
         goal_reached = False
-        cost = 1
+        # cost = 1
 
         s_start = State(self.start, 0)
         self.graph[self.start].g = 0.
@@ -145,6 +142,7 @@ class SIPPPlanner(SIPPGraph):
                 return 0
             s = self.open.pop(0)[1]
             for suc in self.get_successors(s):
+                cost = self.compute_cost(s.position, suc.position)
                 if self.graph[suc.position].g > self.graph[s.position].g + cost:
                     self.graph[suc.position].g = self.graph[s.position].g + cost
                     self.graph[suc.position].parent_state = s
@@ -168,6 +166,29 @@ class SIPPPlanner(SIPPGraph):
                 start_reached = True
             current = self.graph[current.position].parent_state
         return 1
+
+    def compute_cost(self, s_start, s_goal):
+        if self.is_collision(s_start, s_goal):
+            return math.inf
+
+        return math.hypot(s_goal[0] - s_start[0], s_goal[1] - s_start[1])
+        # return 1
+
+    def is_collision(self, s_start, s_end):
+        if s_start in self.obstacles or s_end in self.obstacles:
+            return True
+
+        if s_start[0] != s_end[0] and s_start[1] != s_end[1]:
+            if s_end[0] - s_start[0] == s_start[1] - s_end[1]:
+                s1 = (min(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
+                s2 = (max(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
+            else:
+                s1 = (min(s_start[0], s_end[0]), max(s_start[1], s_end[1]))
+                s2 = (max(s_start[0], s_end[0]), min(s_start[1], s_end[1]))
+
+            if s1 in self.obstacles or s2 in self.obstacles:
+                return True
+        return False
 
     def get_plan(self):
         path_list = []

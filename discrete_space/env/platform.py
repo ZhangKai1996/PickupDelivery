@@ -60,6 +60,9 @@ class Drone:
         return new_pos
 
     def detect(self, drone):
+        if self.is_collision or drone.is_collision:
+            return
+
         if self.position == drone.position:
             self.is_collision = True
             drone.is_collision = True
@@ -120,24 +123,7 @@ class Platform:
             for i, state in enumerate(state_dict['drones'])
         ]
         self.cv_render = None
-
-    def obs_boundary(self):
-        size = self.size
-        obs_boundary = [
-            [0, 0, 1, size],
-            [0, size, size, 1],
-            [1, 0, size, 1],
-            [size, 1, 1, size]
-        ]
-        return obs_boundary
-
-    def obs_rectangle(self):
-        obs_rectangle = []
-        for wall in self.walls:
-            obs_rectangle.append(
-                []
-            )
-        return obs_rectangle
+        self.dynamic_obs = {}
 
     def global_info(self):
         return 'Clock: {}, Drone: {}, Buyer:{}, Merchant:{}'.format(
@@ -217,7 +203,6 @@ class Platform:
             if drone.is_collision:
                 continue
             drone.execute_action(action, self.size, self.walls)
-
         self.__detect_collision()
 
     def render(self, show=False, **kwargs):

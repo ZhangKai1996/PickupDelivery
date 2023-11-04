@@ -7,3 +7,4 @@ from .Dstar import DStar
 
 # Centralized Multi-Agent Planning
 from .sipp import SIPPPlanner
+from .cbs import CBS

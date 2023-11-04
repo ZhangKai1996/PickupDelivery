@@ -19,13 +19,10 @@ def transform(pos, box, width, height, w_p=0, h_p=0):
             h_p + int((pos[1] - min_y) / (max_y - min_y) * _height))
 
 
-root_path = 'continuous_space/'
-
-
 class CVRender:
     def __init__(self, env, width=1200, height=1200, padding=0.05):
         self.video = cv2.VideoWriter(
-            root_path+'figs/pickup_delivery.avi',
+            'figs/pickup_delivery.avi',
             cv2.VideoWriter_fourcc(*'MJPG'),
             8,
             (width, height)

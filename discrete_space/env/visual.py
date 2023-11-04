@@ -11,13 +11,10 @@ def make_random_color():
     return b, g, r
 
 
-root_path = 'discrete_space/'
-
-
 class CVRender:
     def __init__(self, env, width=1200, height=1200, padding=0.05):
         self.video = cv2.VideoWriter(
-            root_path+'figs/pickup_delivery.avi',
+            'figs/pickup_delivery.avi',
             cv2.VideoWriter_fourcc(*'MJPG'),
             8,
             (width+400, height)
@@ -128,7 +125,7 @@ class CVRender:
 
         self.__draw_legends(base_image, width, height)
         self.base_img = base_image
-        cv2.imwrite(root_path+'figs/base_image.png', base_image)
+        cv2.imwrite('figs/base_image.png', base_image)
 
     def draw(self, show=False):
         width, height = self.width, self.height
@@ -155,7 +152,8 @@ class CVRender:
         # Drones
         for drone in env.drones:
             pos = self.pos_dict[drone.position]
-            cv2.circle(base_img, pos, 10, (255, 100, 0), thickness=-1)
+            color = (255, 100, 0) if not drone.is_collision else (255, 0, 255)
+            cv2.circle(base_img, pos, 10, color, thickness=-1)
             last_pos = drone.last_pos
             if last_pos is not None:
                 cv2.line(self.base_img, pos, self.pos_dict[last_pos], (0, 0, 255), thickness=1)
@@ -169,7 +167,6 @@ class CVRender:
         )
 
         self.video.write(base_img)
-
         if show:
             cv2.imshow('base image', base_img)
             if cv2.waitKey(0) == 113:
