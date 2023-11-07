@@ -2,66 +2,66 @@ from typing import Dict, Tuple, List
 
 import numpy as np
 
-from .utils import distance, region_segmentation, is_overlap
+from common.utils import distance, region_segmentation, is_overlap, bbox
 from .visual import CVRender
 
 
 class Drone:
     name: str
-    state: str = 'Empty'
+    radius: float
+    state: str = 'Empty'  # Empty, Pickup, Delivery, Collision_O, Collision_A
     position: Tuple[float, float]
+    velocity: Tuple[float, float] = (0.0, 0.0)
     last_pos: Tuple[float, float]
     distance: int = 0
     endurance: List[int] = [60, 60]
-    orders: Dict[str, int] = {}
+    tasks: Dict[str, int] = {}
     is_collision: bool = False
 
-    def __init__(self, pos, name='Drone'):
+    def __init__(self, pos, radius, name='Drone'):
         self.position = pos
         self.last_pos = None
+        self.radius = radius
         self.name = name
 
-    def update_state(self):
-        if self.state == 'Collision':
-            return
+    def __str__(self):
+        return '{},{},{}, Loc: ({:>6.3f},{:>6.3f}), Vel: ({:>+5.3f},{:>+5.3f})'.format(
+            self.name, self.state,
+            int(self.is_collision),
+            self.position[0], self.position[1],
+            self.velocity[0], self.velocity[1]
+        )
 
-        if self.is_collision:
-            self.state = 'Collision'
-        elif len(self.orders) <= 0:
-            self.state = 'Empty'
-        else:
-            self.state = 'Pickup'
-
-    def execute_action(self, action: list, size: int):
-        """
-        :param size:
-        :param action: [delta_x, delta_y]
-        """
+    def execute_action(self, action: list, size: int, duration=1.0):
         if self.is_collision:
             return
 
         old_pos = self.position[:]
-        new_pos = (new_x, new_y) = (old_pos[0] + action[0], old_pos[1] + action[1])
+        new_pos = (old_pos[0]+action[0]*duration, old_pos[1]+action[1]*duration)
+        self.velocity = tuple(action)
         # print(old_pos, action, new_pos)
-        if size > new_x >= 0 and size > new_y >= 0:
+        if size > new_pos[0] >= 0 and size > new_pos[1] >= 0:
             self.position = new_pos
             self.distance += 1
 
         self.endurance[1] -= 1
         self.last_pos = old_pos
 
-    def detect(self, obj, delta=0.5):
+    def detect(self, obj):
         if isinstance(obj, Drone):
             dist = distance(self.position, obj.position)
-            if dist < 1.0:
+            if dist <= self.radius+obj.radius:
                 self.is_collision = True
+                self.state = 'Collision_A'
                 obj.is_collision = True
+                obj.state = 'Collision_A'
             return
 
-        if isinstance(obj, set):
+        if isinstance(obj, set) or isinstance(obj, list):
             for wall in obj:
-                if is_overlap(self.position, wall, delta_x=delta, delta_y=delta):
+                if is_overlap(self.position, wall, delta=(self.radius, self.radius)):
                     self.is_collision = True
+                    self.state = 'Collision_O'
                     break
 
 
@@ -92,22 +92,25 @@ class Buyer:
 
 
 class Platform:
-    def __init__(self, size=10, time_flow=True, **kwargs):
-        print('---------------Snake environment--------------------')
+    def __init__(self, size=10, radius=.5, time_flow=True, **kwargs):
+        """
+        Drone/Merchant/Buyer都用圆形来表示，半径均为radius；而Wall用正方形表示，边长为2*radius；
+        """
+        print('---------------Pickup-Delivery environment--------------------')
         print(kwargs)
-
         self.size: int = size
+        self.radius: float = radius
         self.clock: int = 0
-        self.kwargs = kwargs
         self.time_flow = time_flow
 
-        pos_dict = region_segmentation(kwargs, size)
+        pos_dict = region_segmentation(kwargs, size, radius)
         self.buyers_stack = list(pos_dict['buyers'])
         self.buyers = []
         self.merchants = pos_dict['merchants']
         self.walls = pos_dict['walls']
-        self.drones = [Drone(name='Drone_{}'.format(i + 1), pos=pos)
+        self.drones = [Drone(name='Drone_{}'.format(i + 1), pos=pos, radius=radius)
                        for i, pos in enumerate(pos_dict['drones'])]
+
         self.cv_render = None
 
     def global_info(self):
@@ -115,19 +118,14 @@ class Platform:
             self.clock, len(self.drones), len(self.buyers), len(self.merchants)
         )
 
-    def get_obs(self, shape='circle', delta=0.5):
+    def get_obs(self, shape='circle'):
+        width = height = self.radius
         if shape == 'circle':
             return []
-
         if shape == 'rectangle':
-            return [
-                (wall[0] - delta, wall[1] - delta, wall[0] + delta, wall[1] + delta)
-                for wall in self.walls
-            ]
-
+            return [bbox(wall, delta=(width, height)) for wall in self.walls]
         if shape == 'boundary':
-            return [delta, delta, self.size-delta, self.size-delta]
-
+            return [width, height, self.size-width, self.size-height]
         raise NotImplementedError
 
     def __update_buyers(self, ):
@@ -139,10 +137,7 @@ class Platform:
         if self.time_flow:
             buyers += self.__generate_buyers(max_buyers=5)
         else:
-            buyers += self.__generate_buyers(
-                max_buyers=len(self.buyers_stack),
-                random=False
-            )
+            buyers += self.__generate_buyers(max_buyers=len(self.buyers_stack), random=False)
         self.buyers = buyers
 
     def __generate_buyers(self, max_buyers=3, random=True):
@@ -167,7 +162,6 @@ class Platform:
 
     def __detect_collision(self):
         num_drone = len(self.drones)
-
         for i in range(num_drone):
             drone = self.drones[i]
             if drone.is_collision:
@@ -182,18 +176,20 @@ class Platform:
             # Collision between drones and walls
             drone.detect(self.walls)
 
-        print(self.clock, [int(drone.is_collision) for drone in self.drones])
-
-    def step(self, actions=None):
+    def step(self, actions=None, duration=1.0):
         self.clock += 1
         self.__update_buyers()
-
         if actions is None:
             return
 
         for i, (drone, action) in enumerate(zip(self.drones, actions)):
-            drone.execute_action(action, self.size)
+            drone.execute_action(action, self.size, duration=duration)
         self.__detect_collision()
+
+        print(self.clock)
+        for i, drone in enumerate(self.drones):
+            action = actions[i]
+            print('\t>>>', drone, 'Delta: ({:>+5.3f},{:>+5.3f})'.format(action[0], action[1]))
 
     def render(self, show=False, **kwargs):
         if self.cv_render is None:

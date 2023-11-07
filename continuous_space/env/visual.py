@@ -80,8 +80,6 @@ class CVRender:
     def __initialize(self, env, height, width):
         base_image = np.ones((height, width, 3), np.uint8) * 255
         w_p, h_p = self.w_p, self.h_p
-        delta = int(0.4 / 30 * (width - 2 * w_p))
-
         # Border
         cv2.rectangle(
             base_image,
@@ -90,18 +88,18 @@ class CVRender:
             (0, 0, 0),
             thickness=5
         )
+        radius = int(env.radius / 30 * (width - 2 * w_p))
         # Merchants
         for i, pos in enumerate(env.merchants):
             pos = transform(pos, self.box,
                             width, height,
                             w_p=w_p, h_p=h_p)
-            cv2.circle(base_image, pos, delta, (255, 0, 0), thickness=2)
-            new_pos = (pos[0] - 5, pos[1] + 5) if i < 10 else (pos[0] - 10, pos[1] + 5)
+            cv2.circle(base_image, pos, radius, (255, 0, 0), thickness=2)
             cv2.putText(
                 base_image,
                 str(i),
-                new_pos,
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                (pos[0] - 5, pos[1] + 5) if i < 10 else (pos[0] - 10, pos[1] + 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                 (0, 0, 0), 1,
                 cv2.LINE_AA
             )
@@ -111,68 +109,64 @@ class CVRender:
                             width, height,
                             w_p=w_p, h_p=h_p)
             cv2.rectangle(base_image,
-                          (pos[0] - delta, pos[1] - delta),
-                          (pos[0] + delta, pos[1] + delta),
+                          (pos[0] - radius, pos[1] - radius),
+                          (pos[0] + radius, pos[1] + radius),
                           (0, 0, 0),
                           thickness=-1)
-
         self.__draw_legends(base_image, width, height)
         self.base_img = base_image
-        cv2.imwrite(root_path+'figs/base_image.png', base_image)
+        cv2.imwrite('figs/base_image.png', base_image)
 
     def draw(self, show=False):
         box = self.box
         width, height, w_p, h_p = self.width, self.height, self.w_p, self.h_p
         base_img = copy.deepcopy(self.base_img)
-        delta = int(0.4 / 30 * (width - 2 * w_p))
 
         # Buyers
         env = self.env
+        radius = int(self.env.radius / 30 * (width - 2 * w_p))
         for buyer in env.buyers:
-            pos = transform(buyer.address,
-                            box,
-                            width, height,
-                            w_p=w_p, h_p=h_p)
-            cv2.circle(base_img, pos, delta, (0, 255, 0), thickness=2)
+            pos = transform(
+                buyer.address,
+                box, width, height,
+                w_p=w_p, h_p=h_p
+            )
+            cv2.circle(base_img, pos, radius, (0, 255, 0), thickness=2)
 
-            for merchant in buyer.get_merchants():
-                m_id = merchant + 1
-                new_pos = (pos[0] - 5, pos[1] + 5) if m_id < 10 else (pos[0] - 10, pos[1] + 5)
+            for m_id in buyer.get_merchants():
                 cv2.putText(
-                    base_img,
-                    str(m_id),
-                    new_pos,
+                    base_img, str(m_id + 1),
+                    (pos[0] - 5, pos[1] + 5) if m_id < 9 else (pos[0] - 10, pos[1] + 5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    (0, 0, 0), 1,
-                    cv2.LINE_AA
+                    (0, 0, 0), 1, cv2.LINE_AA
                 )
         # Drones
         for drone in env.drones:
-            pos = transform(drone.position,
-                            box,
-                            width, height,
-                            w_p=w_p, h_p=h_p)
+            pos = transform(
+                drone.position,
+                box, width, height,
+                w_p=w_p, h_p=h_p
+            )
             color = (0, 100, 255) if drone.is_collision else (255, 100, 0)
-            cv2.circle(base_img, pos, delta, color, thickness=-1)
+            cv2.circle(base_img, pos, radius, color, thickness=-1)
 
             last_pos = drone.last_pos
             if last_pos is not None:
-                last_pos = transform(last_pos,
-                                     box,
-                                     width, height,
-                                     w_p=w_p, h_p=h_p)
+                last_pos = transform(
+                    last_pos,
+                    box, width, height,
+                    w_p=w_p, h_p=h_p
+                )
                 cv2.line(self.base_img, pos, last_pos, (0, 0, 255), thickness=1)
         # Global Information
         cv2.putText(
-            base_img,
-            env.global_info(),
+            base_img, env.global_info(),
             (40, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5, (0, 0, 0), 1, cv2.LINE_AA
         )
 
         self.video.write(base_img)
-
         if show:
             cv2.imshow('base image', base_img)
             if cv2.waitKey(0) == 113:
@@ -183,11 +177,34 @@ class CVRender:
 
         r = int(radius / 30 * (width - 2 * w_p))
         for pos in poses:
-            pos = transform(pos,
-                            self.box,
-                            width, height,
-                            w_p=w_p, h_p=h_p)
+            pos = transform(
+                pos,
+                self.box, width, height,
+                w_p=w_p, h_p=h_p
+            )
             cv2.circle(self.base_img, pos, r, (0, 0, 0), thickness=-1)
+
+        if show:
+            cv2.imshow('base image', self.base_img)
+            if cv2.waitKey(0) == 113:
+                cv2.destroyAllWindows()
+
+    def draw_line(self, poses, radius=0.5, show=False):
+        width, height, w_p, h_p = self.width, self.height, self.w_p, self.h_p
+
+        r = int(radius / 30 * (width - 2 * w_p))
+        for i, pos1 in enumerate(poses[1:]):
+            pos1 = transform(
+                pos1,
+                self.box, width, height,
+                w_p=w_p, h_p=h_p
+            )
+            pos2 = transform(
+                poses[i],
+                self.box, width, height,
+                w_p=w_p, h_p=h_p
+            )
+            cv2.line(self.base_img, pos1, pos2, (255, 255, 0), thickness=1)
 
         if show:
             cv2.imshow('base image', self.base_img)
@@ -203,15 +220,17 @@ class CVRender:
             for node in v1:
                 if node.parent:
                     pos1 = (node.x, node.y)
-                    pos1 = transform(pos1,
-                                     self.box,
-                                     self.width, self.height,
-                                     self.w_p, self.h_p)
+                    pos1 = transform(
+                        pos1,
+                        self.box, self.width, self.height,
+                        self.w_p, self.h_p
+                    )
                     pos2 = (node.parent.x, node.parent.y)
-                    pos2 = transform(pos2,
-                                     self.box,
-                                     self.width, self.height,
-                                     self.w_p, self.h_p)
+                    pos2 = transform(
+                        pos2,
+                        self.box, self.width, self.height,
+                        self.w_p, self.h_p
+                    )
                     cv2.line(self.base_img, pos1, pos2, color, thickness=1)
 
     def close(self):

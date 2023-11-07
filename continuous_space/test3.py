@@ -1,4 +1,6 @@
 import time
+import copy
+
 import numpy as np
 
 from continuous_space.algo import *
@@ -29,43 +31,52 @@ def main(env):
     rrt = RRT(start, goal, env)
     path1 = rrt.planning()[::-1]
     visited1 = [rrt.vertex, ]
-    print('Time Consumption (RRT):', time.time()-start_time, len(path1))
+    print('Time Consumption (RRT):', time.time() - start_time, len(path1))
 
     # RRT connect
     start_time = time.time()
     rrt_conn = RRTConnect(start, goal, env)
-    path2 = rrt_conn.planning()[::-1]
+    path2 = rrt_conn.planning()
     visited2 = [rrt_conn.V1, rrt_conn.V2]
-    print('Time Consumption (RRT_C):', time.time()-start_time, len(path2))
+    print('Time Consumption (RRT_C):', time.time() - start_time, len(path2))
 
     # Dynamic RRT (re-planning后的轨迹不完美)
     start_time = time.time()
     d_rrt = DynamicRRT(start, goal, env)
     path3 = d_rrt.planning()[::-1]
     visited3 = [d_rrt.vertex, ]
-    print('Time Consumption (D_RRT):', time.time()-start_time, len(path3))
+    print('Time Consumption (D_RRT):', time.time() - start_time, len(path3))
 
-    path = path2[:]
-    visited = visited2
+    walls = copy.deepcopy(env.walls)
+    new_walls = []
+    for i, pos in enumerate(path3):
+        pos = (pos[0] + 0.6, pos[1] + 0.6)
+        if i > 0 and i % 5 == 0:
+            env.walls.add(pos)
+            new_walls.append(pos)
+    start_time = time.time()
+    d_rrt = DynamicRRT(start, goal, env)
+    path3_ = d_rrt.planning()[::-1]
+    visited3_ = [d_rrt.vertex, ]
+    print('Time Consumption (D_RRT):', time.time() - start_time, len(path3))
 
-    print('Visual the path:')
+    env.walls = copy.deepcopy(walls)
+    path = path3_[:]
+    visited = visited3_
     last_pos, i = None, 0
     while True:
         env.step()
         pos = path.pop(0)
-        # if i > 0 and i % 5 == 0:
-        #     pos = (pos[0]+1.0, pos[1]+1.0)
-        #     env.cv_render.draw_pos([pos, ], radius=.3)
-        #     env.walls.add(pos)
-        #     print(path3)
-        #     d_rrt.on_press(pos, radius=.3, start=last_pos)
-        #     path = d_rrt.path[::-1]
-        #     print(path)
+        if i > 0 and i % 5 == 0:
+            if len(new_walls) > 0:
+                env.cv_render.draw_pos([new_walls.pop(0), ])
 
         env.drones[0].position = pos
         if last_pos is not None:
             env.drones[0].last_pos = last_pos
         env.render(show=True, visited=visited)
+        if i == 0:
+            env.cv_render.draw_line(path3)
         last_pos = pos
 
         i += 1
@@ -80,9 +91,8 @@ if __name__ == '__main__':
         drones=args_.num_agents,
         merchants=args_.num_merchants,
         buyers=args_.num_buyers,
-        walls=args_.ratio_walls
+        walls=args_.num_walls
     )
 
     main(env_)
     # test_env(args_, env_)
-

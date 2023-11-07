@@ -103,10 +103,10 @@ if __name__ == '__main__':
         drones=args_.num_agents,
         merchants=args_.num_merchants,
         buyers=args_.num_buyers,
-        walls=args_.ratio_walls
+        walls=args_.num_walls
     )
 
-    main_sipp(env_)
-    # main_cbs(env_)
+    # main_sipp(env_)
+    main_cbs(env_)
     # test_env(args_, env_)
 
