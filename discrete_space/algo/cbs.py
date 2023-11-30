@@ -9,6 +9,8 @@ import math
 from itertools import combinations
 from copy import deepcopy
 
+import numpy as np
+
 
 class AStar:
     def __init__(self, env, constraints):
@@ -135,7 +137,7 @@ class State(object):
         return math.fabs(self.location[0] - goal.location[0]) + math.fabs(self.location[1] - goal.location[1])
 
     def __str__(self):
-        return str((self.time, self.location[0], self.location[0]))
+        return str((self.time, self.location[0], self.location[1]))
 
 
 class Conflict(object):
@@ -232,13 +234,36 @@ class CBS(object):
         self.__make_agent_dict(env)
 
     def __make_agent_dict(self, env):
-        merchants = list(env.merchants)
+        from scipy.optimize import linear_sum_assignment
+        from common.utils import distance
+        buyers = list(env.buyers)
+
+        task_matrix = []
+        for drone in env.drones:
+            pos0 = drone.position
+            matrix = []
+            for i, buyer in enumerate(buyers):
+                pos1 = list(buyer.orders.keys())[0]
+                pos2 = buyers[i].address
+                matrix.append(distance(pos0, pos1)+distance(pos1, pos2))
+            task_matrix.append(matrix)
+        task_matrix = np.array(task_matrix)
+
+        print('task_matrix =\n', task_matrix)
+        row_ind, col_ind = linear_sum_assignment(task_matrix)
+        best_solution = list(task_matrix[row_ind, col_ind])
+        print(row_ind, col_ind)
+        print(best_solution, sum(best_solution))
+
         self.od_dict = {}
-        for i, drone in enumerate(env.drones):
+        for i, _ in enumerate(env.drones):
+            drone = env.drones[row_ind[i]]
             start_state = State(0, drone.position)
-            goal_state = State(0, merchants[i])
+            buyer = buyers[col_ind[i]]
+            middle_state = State(0, list(buyer.orders.keys())[0])
+            goal_state = State(0, buyer.address)
             self.od_dict.update({
-                drone.name: [start_state, goal_state]
+                drone.name: [start_state, middle_state, goal_state]
             })
 
     def compute_solution_cost(self, solution):
@@ -246,12 +271,20 @@ class CBS(object):
 
     def compute_solution(self):
         solution = {}
-        for key, [start, goal] in self.od_dict.items():
+        for key, [start, middle, goal] in self.od_dict.items():
             self.constraints = self.constraint_dict.setdefault(key, Constraints())
-            local_solution = self.a_star.search(start, goal)
-            if not local_solution:
+            solution1 = self.a_star.search(start, middle)
+            if not solution1:
                 return False
-            solution.update({key: local_solution})
+            solution2 = self.a_star.search(middle, goal)[1:]
+            if not solution2:
+                return False
+
+            t = solution1[-1].time
+            for i, s in enumerate(solution2):
+                s.time = t + i + 1
+            print([str(s) for s in solution1+solution2])
+            solution.update({key: solution1+solution2})
         return solution
 
     def get_state(self, agent_name, solution, t):

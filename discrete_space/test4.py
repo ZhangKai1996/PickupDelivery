@@ -38,7 +38,7 @@ def main_cbs(env):
                 tracks[t][key] = (pos_dict['x'], pos_dict['y'])
             else:
                 tracks[t] = {key: (pos_dict['x'], pos_dict['y'])}
-    print(tracks)
+    # print(tracks)
 
     print('Visual the paths:')
     for t in range(max(tracks.keys())+1):
@@ -50,7 +50,11 @@ def main_cbs(env):
             drone = drone_dict[key]
             drone.last_pos = drone.position
             drone.position = value
-        env.render(show=True)
+            drone.distance += 1
+        env.render(show=False)
+
+    dist = [drone.distance for drone in env.drones]
+    print(dist, sum(dist))
 
 
 def main_sipp(env):

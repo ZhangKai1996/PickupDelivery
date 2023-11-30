@@ -98,6 +98,7 @@ class Platform:
     def __init__(self, size=10, **kwargs):
         print('---------------Snake environment--------------------')
         print(kwargs)
+        # np.random.seed(1234)
 
         self.size: int = size
         self.clock: int = 0
@@ -115,13 +116,16 @@ class Platform:
             states = states[num:]
 
         self.empty_grids = states
-        self.buyers = None
         self.merchants = state_dict['merchants']
         self.walls = state_dict['walls']
         self.drones = [
             Drone(name='Drone_{}'.format(i + 1), pos=state)
             for i, state in enumerate(state_dict['drones'])
         ]
+        self.buyers = self.__random_generate_buyers(
+            max_buyers=self.kwargs['buyers'],
+            random=False
+        )
         self.cv_render = None
         self.dynamic_obs = {}
 
@@ -132,13 +136,13 @@ class Platform:
 
     def __update_buyers(self, ):
         time_flow = self.kwargs['time_flow']
-
-        if self.buyers is None:
-            self.buyers = self.__random_generate_buyers(
-                max_buyers=3 if time_flow else self.kwargs['buyers'],
-                random=time_flow
-            )
-            return
+        #
+        # if self.buyers is None:
+        #     self.buyers = self.__random_generate_buyers(
+        #         max_buyers=3 if time_flow else self.kwargs['buyers'],
+        #         random=time_flow
+        #     )
+        #     return
 
         buyers = []
         for buyer in self.buyers:
@@ -166,7 +170,10 @@ class Platform:
             buyer = Buyer(name=str(address), address=address)
             buyers.append(buyer)
 
-            m_id = np.random.randint(0, len(self.merchants))
+            if random:
+                m_id = np.random.randint(0, len(self.merchants))
+            else:
+                m_id = i % len(self.merchants)
             buyer.buy(self.merchants[m_id], clock)
             print('\t>>>', buyer.address, self.merchants[m_id], buyer.orders)
 
