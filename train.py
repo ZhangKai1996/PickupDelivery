@@ -3,14 +3,14 @@ import time
 
 import algo.tf_util as U
 from algo.maddpg import MADDPGAgentTrainer
+from env.environment import MultiAgentEnv
 
-import tf_slim.layers as layers
-import tensorflow.compat.v1 as tf
+# import tf_slim.layers as layers
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
 
-tf.disable_v2_behavior()
-
-# import tensorflow as tf
-# import tensorflow.contrib.layers as layers
+import tensorflow as tf
+import tensorflow.contrib.layers as layers
 
 
 def parse_args():
@@ -18,7 +18,7 @@ def parse_args():
 
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--max-episode-len", type=int, default=25, help="maximum episode length")
+    parser.add_argument("--max-episode-len", type=int, default=50, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=60000, help="number of episodes")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
@@ -33,7 +33,7 @@ def parse_args():
                         help="directory in which training state and model should be saved")
     parser.add_argument("--save-rate", type=int, default=1000,
                         help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default=None,
+    parser.add_argument("--load-dir", type=str, default="./trained/policy/",
                         help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--display", action="store_true", default=False)
@@ -50,18 +50,6 @@ def mlp_model(inputs, num_outputs, scope, reuse=False, num_units=64, rnn_cell=No
         out = layers.fully_connected(out, num_outputs=num_units, activation_fn=tf.nn.relu)
         out = layers.fully_connected(out, num_outputs=num_outputs, activation_fn=None)
         return out
-
-
-def make_env():
-    from env import MultiAgentEnv, Scenario
-
-    # load scenario from script
-    scenario = Scenario()
-    # create world
-    world = scenario.make_world()
-    # create multi-agent environment
-    env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
-    return env
 
 
 def get_trainers(env, args):
@@ -85,14 +73,14 @@ def train():
 
     with U.single_threaded_session():
         # Create environment
-        env = make_env()
+        env = MultiAgentEnv()
         # Create agent trainers
         trainers = get_trainers(env, args)
         print('Using good policy {} and adv policy {}'.format(args.good_policy, args.adv_policy))
         # Initialize
         U.initialize()
         # Load previous results, if necessary
-        if args.load_dir is not None:
+        if args.display and args.load_dir is not None:
             print('Loading previous state...')
             U.load_state(args.load_dir)
 
@@ -108,13 +96,12 @@ def train():
             # get action
             action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
             # environment step
-            new_obs_n, rew_n, done_n, info_n = env.step(action_n)
+            new_obs_n, rew_n, done, info_n = env.step(action_n)
             episode_step += 1
-            done = all(done_n)
             terminal = (episode_step >= args.max_episode_len)
             # collect experience
             for i, agent in enumerate(trainers):
-                agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done_n[i], terminal)
+                agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done)
             obs_n = new_obs_n
 
             for i, rew in enumerate(rew_n):
@@ -131,6 +118,7 @@ def train():
             # for displaying learned policies
             if args.display:
                 env.render()
+                continue
 
             # update all trainers, if not in display or benchmark mode
             loss = None

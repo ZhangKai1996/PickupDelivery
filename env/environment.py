@@ -3,6 +3,8 @@ from gym import spaces
 import numpy as np
 
 from env.multi_discrete import MultiDiscrete
+from env.scenario import Scenario
+from env import rendering
 
 
 # environment for all agents in the multi-agent world
@@ -12,20 +14,14 @@ class MultiAgentEnv(gym.Env):
         'render.modes': ['human', 'rgb_array']
     }
 
-    def __init__(self, world, reset_callback=None, reward_callback=None,
-                 observation_callback=None, info_callback=None,
-                 done_callback=None, shared_viewer=True):
-
-        self.world = world
-        self.agents = self.world.policy_agents
+    def __init__(self, info_callback=None, shared_viewer=True):
+        self.scenario = Scenario()
+        self.world = world = self.scenario.world
+        self.agents = world.policy_agents
         # set required vectorized gym env property
-        self.n = len(world.policy_agents)
+        self.n = len(self.agents)
         # scenario callbacks
-        self.reset_callback = reset_callback
-        self.reward_callback = reward_callback
-        self.observation_callback = observation_callback
         self.info_callback = info_callback
-        self.done_callback = done_callback
         # environment parameters
         self.discrete_action_space = True
         # if true, action is a number 0...N, otherwise action is a one-hot N-dimensional vector
@@ -67,7 +63,7 @@ class MultiAgentEnv(gym.Env):
             else:
                 self.action_space.append(total_action_space[0])
             # observation space
-            obs_dim = len(observation_callback(agent, self.world))
+            obs_dim = len(self.scenario.observation(agent))
             self.observation_space.append(spaces.Box(low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))
             agent.action.c = np.zeros(self.world.dim_c)
 
@@ -82,7 +78,6 @@ class MultiAgentEnv(gym.Env):
     def step(self, action_n):
         obs_n = []
         reward_n = []
-        done_n = []
         info_n = {'n': []}
         self.agents = self.world.policy_agents
         # set action for each agent
@@ -92,28 +87,26 @@ class MultiAgentEnv(gym.Env):
         self.world.step()
         # record observation for each agent
         for agent in self.agents:
-            obs_n.append(self._get_obs(agent))
-            reward_n.append(self._get_reward(agent))
-            done_n.append(self._get_done(agent))
+            obs_n.append(self.scenario.observation(agent))
+            reward_n.append(self.scenario.reward(agent))
             info_n['n'].append(self._get_info(agent))
-
+        done = self.scenario.done()
         # all agents get total reward in cooperative case
         reward = np.sum(reward_n)
         if self.shared_reward:
             reward_n = [reward] * self.n
-
-        return obs_n, reward_n, done_n, info_n
+        return obs_n, reward_n, done, info_n
 
     def reset(self):
         # reset world
-        self.reset_callback(self.world)
+        self.scenario.reset()
         # reset renderer
         self._reset_render()
         # record observations for each agent
         obs_n = []
         self.agents = self.world.policy_agents
         for agent in self.agents:
-            obs_n.append(self._get_obs(agent))
+            obs_n.append(self.scenario.observation(agent))
         return obs_n
 
     # get info used for benchmarking
@@ -121,25 +114,6 @@ class MultiAgentEnv(gym.Env):
         if self.info_callback is None:
             return {}
         return self.info_callback(agent, self.world)
-
-    # get observation for a particular agent
-    def _get_obs(self, agent):
-        if self.observation_callback is None:
-            return np.zeros(0)
-        return self.observation_callback(agent, self.world)
-
-    # get dones for a particular agent
-    # unused right now -- agents are allowed to go beyond the viewing screen
-    def _get_done(self, agent):
-        if self.done_callback is None:
-            return False
-        return self.done_callback(agent, self.world)
-
-    # get reward for a particular agent
-    def _get_reward(self, agent):
-        if self.reward_callback is None:
-            return 0.0
-        return self.reward_callback(agent, self.world)
 
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, time=None):
@@ -213,19 +187,16 @@ class MultiAgentEnv(gym.Env):
                     message += (other.name + ' to ' + agent.name + ': ' + word + '   ')
             print(message)
 
-        for i in range(len(self.viewers)):
-            # create viewers (if necessary)
-            if self.viewers[i] is None:
-                # import rendering only if we need it (and don't import for headless machines)
-                # from gym.envs.classic_control import rendering
-                from env import rendering
-                self.viewers[i] = rendering.Viewer(700, 700)
+        viewers = []
+        for viewer in self.viewers:
+            if viewer is None:
+                viewer = rendering.Viewer(700, 700)
+            viewers.append(viewer)
+        self.viewers = viewers
 
         # create rendering geometry
         if self.render_geoms is None:
             # import rendering only if we need it (and don't import for headless machines)
-            # from gym.envs.classic_control import rendering
-            from env import rendering
             self.render_geoms = []
             self.render_geoms_xform = []
             for entity in self.world.entities:
@@ -241,9 +212,7 @@ class MultiAgentEnv(gym.Env):
 
             # add geoms to viewer
             for viewer in self.viewers:
-                viewer.geoms = []
-                for geom in self.render_geoms:
-                    viewer.add_geom(geom)
+                viewer.geoms = self.render_geoms[:]
 
         results = []
         for i in range(len(self.viewers)):
@@ -257,9 +226,10 @@ class MultiAgentEnv(gym.Env):
             # update geometry positions
             for e, entity in enumerate(self.world.entities):
                 self.render_geoms_xform[e].set_translation(*entity.state.p_pos)
+                if 'landmark' in entity.name and entity.occupied:
+                    self.render_geoms[e].set_color(*entity.color, alpha=0.3)
             # render to display or array
             results.append(self.viewers[i].render(return_rgb_array=mode == 'rgb_array'))
-
         return results
 
     # create receptor field locations in local coordinate frame

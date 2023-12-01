@@ -5,9 +5,9 @@ from tensorflow.python.ops import nn
 import algo.tf_util as U
 from env.multi_discrete import MultiDiscrete
 
-# import tensorflow as tf
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+import tensorflow as tf
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
 
 class Pd(object):
     """

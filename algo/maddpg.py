@@ -5,9 +5,9 @@ from algo.distributions import make_pdtype
 from algo import AgentTrainer
 from algo.replay_buffer import ReplayBuffer
 
-# import tensorflow as tf
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+import tensorflow as tf
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
 
 
 def discount_with_dones(rewards, dones, gamma):
@@ -159,7 +159,7 @@ class MADDPGAgentTrainer(AgentTrainer):
     def action(self, obs):
         return self.act(obs[None])[0]
 
-    def experience(self, obs, act, rew, new_obs, done, terminal):
+    def experience(self, obs, act, rew, new_obs, done):
         # Store transition in the replay buffer.
         self.replay_buffer.add(obs, act, rew, new_obs, float(done))
 
@@ -169,7 +169,7 @@ class MADDPGAgentTrainer(AgentTrainer):
     def update(self, agents, t):
         if len(self.replay_buffer) < self.max_replay_buffer_len:  # replay buffer is not large enough
             return
-        if not t % 100 == 0:  # only update every 100 steps
+        if not t % 10 == 0:  # only update every 100 steps
             return
 
         self.replay_sample_index = self.replay_buffer.make_index(self.args.batch_size)
