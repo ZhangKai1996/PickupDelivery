@@ -332,6 +332,9 @@ class PolyLine(Geom):
             glVertex3f(p[0], p[1], 0)  # draw each vertex
         glEnd()
 
+    def set_v(self, v):
+        self.v = v
+
     def set_linewidth(self, x):
         self.linewidth.stroke = x
 

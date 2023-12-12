@@ -45,13 +45,6 @@ class MultiAgentEnv(gym.Env):
                                             dtype=np.float32)
             if agent.movable:
                 total_action_space.append(u_action_space)
-            # communication action space
-            if self.discrete_action_space:
-                c_action_space = spaces.Discrete(world.dim_c)
-            else:
-                c_action_space = spaces.Box(low=0.0, high=1.0, shape=(world.dim_c,), dtype=np.float32)
-            if not agent.silent:
-                total_action_space.append(c_action_space)
             # total action space
             if len(total_action_space) > 1:
                 # all action spaces are discrete, so simplify to MultiDiscrete action space
@@ -65,7 +58,6 @@ class MultiAgentEnv(gym.Env):
             # observation space
             obs_dim = len(self.scenario.observation(agent))
             self.observation_space.append(spaces.Box(low=-np.inf, high=+np.inf, shape=(obs_dim,), dtype=np.float32))
-            agent.action.c = np.zeros(self.world.dim_c)
 
         # rendering
         self.shared_viewer = shared_viewer
@@ -118,7 +110,6 @@ class MultiAgentEnv(gym.Env):
     # set env action for a particular agent
     def _set_action(self, action, agent, action_space, time=None):
         agent.action.u = np.zeros(self.world.dim_p)
-        agent.action.c = np.zeros(self.world.dim_c)
         # process action
         if isinstance(action_space, MultiDiscrete):
             act = []
@@ -155,14 +146,6 @@ class MultiAgentEnv(gym.Env):
                 sensitivity = agent.accel
             agent.action.u *= sensitivity
             action = action[1:]
-        if not agent.silent:
-            # communication action
-            if self.discrete_action_input:
-                agent.action.c = np.zeros(self.world.dim_c)
-                agent.action.c[action[0]] = 1.0
-            else:
-                agent.action.c = action[0]
-            action = action[1:]
         # make sure we used all elements of action
         assert len(action) == 0
 
@@ -177,13 +160,9 @@ class MultiAgentEnv(gym.Env):
             alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
             message = ''
             for agent in self.world.agents:
-                comm = []
                 for other in self.world.agents:
                     if other is agent: continue
-                    if np.all(other.state.c == 0):
-                        word = '_'
-                    else:
-                        word = alphabet[np.argmax(other.state.c)]
+                    word = '_'
                     message += (other.name + ' to ' + agent.name + ': ' + word + '   ')
             print(message)
 
@@ -226,7 +205,7 @@ class MultiAgentEnv(gym.Env):
             # update geometry positions
             for e, entity in enumerate(self.world.entities):
                 self.render_geoms_xform[e].set_translation(*entity.state.p_pos)
-                if 'landmark' in entity.name and entity.occupied:
+                if 'agent' not in entity.name and entity.occupied:
                     self.render_geoms[e].set_color(*entity.color, alpha=0.3)
             # render to display or array
             results.append(self.viewers[i].render(return_rgb_array=mode == 'rgb_array'))

@@ -1,5 +1,5 @@
 import numpy as np
-from env.core import World, Agent, Landmark
+from env.core import World, Agent, Landmark, Task
 
 
 def is_collision(agent1, agent2):
@@ -13,9 +13,8 @@ class Scenario:
     def __init__(self):
         world = World()
         # set any world properties first
-        world.dim_c = 2
         num_agents = 3
-        num_landmarks = 6
+        num_tasks = 6
         world.collaborative = True
         # add agents
         world.agents = [Agent() for _ in range(num_agents)]
@@ -24,12 +23,19 @@ class Scenario:
             agent.collide = True
             agent.silent = True
             agent.size = 0.1
-        # add landmarks
-        world.landmarks = [Landmark() for _ in range(num_landmarks)]
-        for i, landmark in enumerate(world.landmarks):
-            landmark.name = 'landmark %d' % i
+        # add pickups
+        world.pickups = [Landmark() for _ in range(num_tasks)]
+        world.deliveries = [Landmark() for _ in range(num_tasks)]
+        for i, landmark in enumerate(world.pickups):
+            landmark.name = 'pickup %d' % i
             landmark.collide = False
             landmark.movable = False
+        # add deliveries
+        for i, landmark in enumerate(world.deliveries):
+            landmark.name = 'delivery %d' % i
+            landmark.collide = False
+            landmark.movable = False
+        self.tasks = None
         self.world = world
         # make initial conditions
         self.reset()
@@ -41,31 +47,52 @@ class Scenario:
             agent.color = np.array([0.35, 0.35, 0.85])
             agent.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             agent.state.p_vel = np.zeros(world.dim_p)
-            agent.state.c = np.zeros(world.dim_c)
-        # random properties and initial states for landmarks
-        for i, landmark in enumerate(world.landmarks):
-            landmark.color = np.array([0.25, 0.25, 0.25])
+        # random properties and initial states for pickups
+        for i, landmark in enumerate(world.pickups):
+            landmark.color = np.array([0.00, 0.56, 0.56])
             landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
             landmark.occupied = False
+        # random properties and initial states for deliveries
+        for i, landmark in enumerate(world.deliveries):
+            landmark.color = np.array([1.00, 0.85, 0.73])
+            landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
+            landmark.state.p_vel = np.zeros(world.dim_p)
+            landmark.occupied = False
+        self.tasks = [Task(p, d) for p, d in zip(world.pickups, world.deliveries)]
 
     def done(self):
-        for mark in self.world.landmarks:
-            if not mark.occupied:
+        for task in self.tasks:
+            if not task.is_over():
                 return False
         return True
 
+    # -634.28, 26%-28%
     def reward(self, agent):
         # Agents are rewarded based on minimum agent distance to each landmark
         world = self.world
         rew = 0.0
-        for mark in world.landmarks:
-            if mark.occupied: continue
-            dists = [np.sqrt(np.sum(np.square(a.state.p_pos - mark.state.p_pos))) for a in world.agents]
-            rew -= min(dists)
-            if is_collision(agent, mark):
-                mark.occupied = True
-            #     rew += 10.0
+        for task in self.tasks:
+            if task.is_over(): continue
+
+            p, d = task.p, task.d
+            if not p.occupied:
+                if is_collision(agent, p):
+                    p.occupied = True
+                    task.agent = agent
+                else:
+                    dists = [np.sqrt(np.sum(np.square(a.state.p_pos - p.state.p_pos))) for a in world.agents]
+                    rew -= min(dists)
+
+            if not p.occupied or d.occupied:
+                continue
+
+            if is_collision(agent, d) and task.agent == agent:
+                d.occupied = True
+            else:
+                dists = [np.sqrt(np.sum(np.square(a.state.p_pos - d.state.p_pos))) for a in world.agents]
+                rew -= min(dists)
+
         # Penalized for collisions
         if agent.collide:
             for a in world.agents:
@@ -83,10 +110,8 @@ class Scenario:
             else:
                 entity_pos.append(entity.state.p_pos - agent.state.p_pos)
         # communication of all other agents
-        comm = []
         other_pos = []
         for other in world.agents:
             if other is agent: continue
-            comm.append(other.state.c)
             other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([agent.state.p_vel, agent.state.p_pos] + entity_pos + other_pos + comm)
+        return np.concatenate([agent.state.p_vel, agent.state.p_pos] + entity_pos + other_pos)

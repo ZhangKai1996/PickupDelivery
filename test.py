@@ -1,4 +1,5 @@
 import time
+import numpy as np
 
 import algo.tf_util as U
 from env import MultiAgentEnv
@@ -11,8 +12,8 @@ def parse_args():
 
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
     # Environment
-    parser.add_argument("--max-episode-len", type=int, default=25, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=60000, help="number of episodes")
+    parser.add_argument("--max-episode-len", type=int, default=100, help="maximum episode length")
+    # parser.add_argument("--num-episodes", type=int, default=60000, help="number of episodes")
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
@@ -30,8 +31,6 @@ def parse_args():
                         help="directory in which training state and model are loaded")
     # Evaluation
     parser.add_argument("--display", action="store_true", default=True)
-    parser.add_argument("--plots-dir", type=str, default="./trained/curves/",
-                        help="directory where plot data is saved")
     return parser.parse_args()
 
 
@@ -51,6 +50,8 @@ def test():
             print('Loading previous state...')
             U.load_state(args.load_dir)
 
+        episode_rewards = [0.0]  # sum of rewards for all agents
+        success = []
         obs_n = env.reset()
         episode_step = 0
         print('Starting iterations...')
@@ -60,17 +61,27 @@ def test():
             # environment step
             new_obs_n, rew_n, done, info_n = env.step(action_n)
             episode_step += 1
-            terminal = (episode_step >= args.max_episode_len)
+            terminal = done or (episode_step >= args.max_episode_len)
             obs_n = new_obs_n
+
+            for i, rew in enumerate(rew_n):
+                episode_rewards[-1] += rew
 
             # for displaying learned policies
             if args.display:
-                time.sleep(0.2)
+                pass
+                time.sleep(0.1)
                 env.render()
 
             # save model, display training output
-            if done or terminal:
-                break
+            if terminal:
+                obs_n = env.reset()
+                episode_step = 0
+                if len(episode_rewards) >= 500:
+                    break
+                episode_rewards.append(0.0)
+                success.append(int(done))
+        print(np.mean(episode_rewards), np.mean(success))
 
 
 if __name__ == '__main__':
