@@ -101,6 +101,13 @@ class MultiAgentEnv(gym.Env):
             obs_n.append(self.scenario.observation(agent))
         return obs_n
 
+    def get_info(self):
+        ret = {}
+        for a in self.world.agents:
+            ret[a.name] = [round(np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))), 2)
+                           for l in self.world.landmarks]
+        return ret
+
     # get info used for benchmarking
     def _get_info(self, agent):
         if self.info_callback is None:
@@ -156,16 +163,6 @@ class MultiAgentEnv(gym.Env):
 
     # render environment
     def render(self, mode='human'):
-        if mode == 'human':
-            alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-            message = ''
-            for agent in self.world.agents:
-                for other in self.world.agents:
-                    if other is agent: continue
-                    word = '_'
-                    message += (other.name + ' to ' + agent.name + ': ' + word + '   ')
-            print(message)
-
         viewers = []
         for viewer in self.viewers:
             if viewer is None:

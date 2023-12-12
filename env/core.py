@@ -87,8 +87,7 @@ class World(object):
     def __init__(self):
         # list of agents and entities (can change at execution-time!)
         self.agents = []
-        self.pickups = []
-        self.deliveries = []
+        self.landmarks = []
         # position dimensionality
         self.dim_p = 2
         # color dimensionality
@@ -104,11 +103,7 @@ class World(object):
     # return all entities in the world
     @property
     def entities(self):
-        return self.agents + self.pickups + self.deliveries
-
-    @property
-    def landmarks(self):
-        return self.pickups + self.deliveries
+        return self.agents + self.landmarks
 
     # return all agents controllable by external policies
     @property

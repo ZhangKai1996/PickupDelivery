@@ -1,4 +1,5 @@
 import time
+from math import pow, sqrt
 import numpy as np
 
 import algo.tf_util as U
@@ -34,6 +35,10 @@ def parse_args():
     return parser.parse_args()
 
 
+def distance(p0, p1):
+    return sqrt(pow(p0[0]-p1[0], 2)+pow(p0[1]-p1[1], 2))
+
+
 def test():
     args = parse_args()
 
@@ -50,9 +55,12 @@ def test():
             print('Loading previous state...')
             U.load_state(args.load_dir)
 
-        episode_rewards = [0.0]  # sum of rewards for all agents
+        episode_rewards = []  # sum of rewards for all agents
+        step_rewards, path = [], []
         success = []
         obs_n = env.reset()
+        info = env.get_info()
+
         episode_step = 0
         print('Starting iterations...')
         while True:
@@ -62,26 +70,33 @@ def test():
             new_obs_n, rew_n, done, info_n = env.step(action_n)
             episode_step += 1
             terminal = done or (episode_step >= args.max_episode_len)
+            path.append([distance(s1, s0) for s1, s0 in zip(new_obs_n, obs_n)])
             obs_n = new_obs_n
-
-            for i, rew in enumerate(rew_n):
-                episode_rewards[-1] += rew
+            step_rewards.append(rew_n)
 
             # for displaying learned policies
             if args.display:
                 pass
-                time.sleep(0.1)
-                env.render()
+                # time.sleep(0.1)
+                # env.render()
 
             # save model, display training output
             if terminal:
-                obs_n = env.reset()
                 episode_step = 0
+                mean_rew = list(np.sum(step_rewards, axis=0))
+                mean_path = list(np.sum(path, axis=0))
+                for i, (a, dists) in enumerate(info.items()):
+                    print(a, dists, round(mean_path[i], 2), end=',')
+                print()
+                episode_rewards.append(mean_rew+[np.sum(step_rewards), ])
+                success.append(int(done))
+                step_rewards, path = [], []
                 if len(episode_rewards) >= 500:
                     break
-                episode_rewards.append(0.0)
-                success.append(int(done))
-        print(np.mean(episode_rewards), np.mean(success))
+                obs_n = env.reset()
+                info = env.get_info()
+
+        print(np.mean(episode_rewards, axis=0), np.mean(success))
 
 
 if __name__ == '__main__':
