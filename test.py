@@ -18,7 +18,7 @@ def parse_args():
     parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
     # Core training parameters
-    parser.add_argument("--lr", type=float, default=1e-2, help="learning rate for Adam optimizer")
+    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate for Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
     parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
@@ -56,7 +56,7 @@ def test():
             U.load_state(args.load_dir)
 
         episode_rewards = []  # sum of rewards for all agents
-        step_rewards, path = [], []
+        path = []
         success = []
         obs_n = env.reset()
         info = env.get_info()
@@ -72,25 +72,26 @@ def test():
             terminal = done or (episode_step >= args.max_episode_len)
             path.append([distance(s1, s0) for s1, s0 in zip(new_obs_n, obs_n)])
             obs_n = new_obs_n
-            step_rewards.append(rew_n)
 
             # for displaying learned policies
             if args.display:
                 pass
-                # time.sleep(0.1)
-                # env.render()
+                time.sleep(0.1)
+                env.render()
 
             # save model, display training output
             if terminal:
                 episode_step = 0
-                mean_rew = list(np.sum(step_rewards, axis=0))
                 mean_path = list(np.sum(path, axis=0))
+                ret = []
+                print(len(episode_rewards), end=',')
                 for i, (a, dists) in enumerate(info.items()):
                     print(a, dists, round(mean_path[i], 2), end=',')
+                    ret.append(mean_path[i] / min(dists))
                 print()
-                episode_rewards.append(mean_rew+[np.sum(step_rewards), ])
+                episode_rewards.append(ret)
                 success.append(int(done))
-                step_rewards, path = [], []
+                path = []
                 if len(episode_rewards) >= 500:
                     break
                 obs_n = env.reset()

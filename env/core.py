@@ -23,7 +23,7 @@ class Entity(object):
         # name 
         self.name = ''
         # properties:
-        self.size = 0.050
+        self.size = 0.020
         # entity can move / be pushed
         self.movable = False
         # entity collides with others
@@ -61,6 +61,9 @@ class Task(object):
     def is_over(self):
         return self.p.occupied and self.d.occupied
 
+    def has_assigned(self):
+        return self.p.occupied
+
 
 # properties of agent entities
 class Agent(Entity):
@@ -87,7 +90,9 @@ class World(object):
     def __init__(self):
         # list of agents and entities (can change at execution-time!)
         self.agents = []
-        self.landmarks = []
+        self.pickups = []
+        self.deliveries = []
+        self.barriers = []
         # position dimensionality
         self.dim_p = 2
         # color dimensionality
@@ -103,7 +108,11 @@ class World(object):
     # return all entities in the world
     @property
     def entities(self):
-        return self.agents + self.landmarks
+        return self.agents + self.pickups + self.deliveries + self.barriers
+
+    @property
+    def landmarks(self):
+        return self.pickups + self.deliveries
 
     # return all agents controllable by external policies
     @property

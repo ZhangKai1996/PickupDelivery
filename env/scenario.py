@@ -3,6 +3,9 @@ from env.core import World, Agent, Landmark, Task
 
 
 def is_collision(agent1, agent2):
+    if agent1 == agent2:
+        return False
+
     delta_pos = agent1.state.p_pos - agent2.state.p_pos
     dist = np.sqrt(np.sum(np.square(delta_pos)))
     dist_min = agent1.size + agent2.size
@@ -14,7 +17,8 @@ class Scenario:
         world = World()
         # set any world properties first
         num_agents = 3
-        num_tasks = 3
+        num_tasks = 6
+        num_barriers = 10
         world.collaborative = True
         # add agents
         world.agents = [Agent() for _ in range(num_agents)]
@@ -22,13 +26,27 @@ class Scenario:
             agent.name = 'agent %d' % i
             agent.collide = True
             agent.silent = True
-            agent.size = 0.1
+            agent.size = 0.05
         # add pickups
-        world.landmarks = [Landmark() for _ in range(num_tasks)]
-        for i, landmark in enumerate(world.landmarks):
-            landmark.name = 'landmark %d' % i
+        world.pickups = [Landmark() for _ in range(num_tasks)]
+        for i, landmark in enumerate(world.pickups):
+            landmark.name = 'pickup %d' % i
             landmark.collide = False
             landmark.movable = False
+        # add pickups
+        world.deliveries = [Landmark() for _ in range(num_tasks)]
+        for i, landmark in enumerate(world.deliveries):
+            landmark.name = 'delivery %d' % i
+            landmark.collide = False
+            landmark.movable = False
+        # add pickups
+        world.barriers = [Landmark() for _ in range(num_barriers)]
+        for i, landmark in enumerate(world.barriers):
+            landmark.name = 'barrier %d' % i
+            landmark.collide = True
+            landmark.movable = False
+            landmark.size = 0.05
+        self.tasks = None
         self.world = world
         # make initial conditions
         self.reset()
@@ -41,15 +59,27 @@ class Scenario:
             agent.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             agent.state.p_vel = np.zeros(world.dim_p)
         # random properties and initial states for landmarks
-        for i, landmark in enumerate(world.landmarks):
+        for i, landmark in enumerate(world.pickups):
             landmark.color = np.array([0.00, 0.56, 0.56])
             landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
             landmark.state.p_vel = np.zeros(world.dim_p)
             landmark.occupied = False
+        # random properties and initial states for landmarks
+        for i, landmark in enumerate(world.deliveries):
+            landmark.color = np.array([1.00, 0.85, 0.73])
+            landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
+            landmark.state.p_vel = np.zeros(world.dim_p)
+            landmark.occupied = False
+        # random properties and initial states for landmarks
+        for i, landmark in enumerate(world.barriers):
+            landmark.color = np.array([0.30, 0.30, 0.30])
+            landmark.state.p_pos = np.random.uniform(-1, +1, world.dim_p)
+            landmark.state.p_vel = np.zeros(world.dim_p)
+        self.tasks = [Task(p, d) for p, d in zip(world.pickups, world.deliveries)]
 
     def done(self):
-        for landmark in self.world.landmarks:
-            if not landmark.occupied:
+        for task in self.tasks:
+            if not task.is_over():
                 return False
         return True
 
@@ -58,17 +88,32 @@ class Scenario:
         # Agents are rewarded based on minimum agent distance to each landmark
         world = self.world
         rew = 0.0
-        for p in self.world.landmarks:
-            if p.occupied: continue
-            dists = [np.sqrt(np.sum(np.square(a.state.p_pos - p.state.p_pos))) for a in world.agents]
-            rew -= min(dists)
-            if is_collision(agent, p):
-                p.occupied = True
+        for task in self.tasks:
+            if task.is_over(): continue
+            p, d = task.p, task.d
+            if not p.occupied:
+                if is_collision(agent, p):
+                    p.occupied = True
+                    task.agent = agent
+                else:
+                    dists = [np.sqrt(np.sum(np.square(a.state.p_pos - p.state.p_pos))) for a in world.agents]
+                    rew -= min(dists)
+
+            if not p.occupied or d.occupied:
+                continue
+            if is_collision(agent, d) and task.agent == agent:
+                d.occupied = True
+            else:
+                dists = [np.sqrt(np.sum(np.square(a.state.p_pos - d.state.p_pos))) for a in world.agents]
+                rew -= min(dists)
         # Penalized for collisions
         if agent.collide:
             for a in world.agents:
                 if is_collision(a, agent):
                     rew -= 1.0
+            for b in world.barriers:
+                if is_collision(b, agent):
+                    rew -= 100.0
         return rew
 
     def observation(self, agent):

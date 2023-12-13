@@ -2,12 +2,13 @@ import numpy as np
 
 import algo.tf_util as U
 from algo.distributions import make_pdtype
-from algo import AgentTrainer
 from algo.replay_buffer import ReplayBuffer
 
 import tensorflow as tf
 # import tensorflow.compat.v1 as tf
 # tf.disable_v2_behavior()
+
+print(tf.test.is_gpu_available())
 
 
 def discount_with_dones(rewards, dones, gamma):
@@ -117,7 +118,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer, grad_norm_cl
         return train, update_target_q, {'q_values': q_values, 'target_q_values': target_q_values}
 
 
-class MADDPGAgentTrainer(AgentTrainer):
+class MADDPGAgentTrainer:
     def __init__(self, name, model, obs_shape_n, act_space_n, agent_index, args, local_q_func=False):
         self.name = name
         self.n = len(obs_shape_n)
