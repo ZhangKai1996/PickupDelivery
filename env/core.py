@@ -1,38 +1,70 @@
 from typing import Dict, Tuple, List
 
 
-class Entity:
+# physical/external base state of all entities
+class EntityState(object):
     def __init__(self):
-        pass
+        # physical position
+        self.p_pos = None
+        # physical velocity
+        self.p_vel = None
 
 
-class Buyer:
-    name: str
-    address: Tuple[float, float]
-    orders: Dict[int, int]
-
-    def __init__(self, name, address):
+# properties and state of physical world entity
+class Entity(object):
+    def __init__(self, name='', size=0.050, movable=False, collide=True, color=(0.0, 0.0, 0.0)):
+        # name
         self.name = name
-        self.address = address
-        self.orders = {}
+        # properties:
+        self.size = size
+        # entity can move / be pushed
+        self.movable = movable
+        # entity collides with others
+        self.collide = collide
+        # material density (affects mass)
+        self.density = 25.0
+        # color
+        self.color = color
+        # max speed and accel
+        self.max_speed = None
+        self.accel = None
+        # state
+        self.state = EntityState()
+        # mass
+        self.initial_mass = 1.0
 
-    def buy(self, merchant, t: int):
-        self.orders[merchant] = t
+    @property
+    def mass(self):
+        return self.initial_mass
 
-    def get_merchants(self):
-        return list(self.orders.keys())
-
-    def update_orders(self, clock):
-        orders = {}
-        for merchant, t in self.orders.items():
-            if clock - t >= 100:  # 如果服务时间超过100s，则消除该订单
-                continue
-            orders[merchant] = t
-        self.orders = orders
-        return len(orders) <= 0
+# properties of landmark entities
+class Buyer(Entity):
+     def __init__(self, **kwargs):
+        super(Buyer, self).__init__(**kwargs)
+        self.occupied = False
 
 
-class Drone(Entity):
+class Merchant(Entity):
+    def __init__(self, **kwargs):
+        super(Merchant, self).__init__(**kwargs)
+        self.occupied = False
+
+
+# properties of agent entities
+class Agent(Entity):
+    def __init__(self, **kwargs):
+        super(Agent, self).__init__(**kwargs)
+        # cannot observe the world
+        self.o_range = 0.1
+        # physical motor noise amount
+        self.u_noise = None
+        # control range
+        self.u_range = 1.0
+        # action
+        self.action = None
+
+
+class Rider(Entity):
     name: str
     radius: float
     state: str = 'Empty'  # Empty, Pickup, Delivery, Collision_O, Collision_A
@@ -44,11 +76,8 @@ class Drone(Entity):
     tasks: Dict[str, int] = {}
     is_collision: bool = False
 
-    def __init__(self, pos, radius, name='Drone'):
-        super().__init__()
-        self.position = pos
-        self.last_pos = None
-        self.radius = radius
+    def __init__(self, name='Drone'):
+        super(Rider, self).__init__()
         self.name = name
 
     def __str__(self):
@@ -93,4 +122,12 @@ class Drone(Entity):
 
 
 class Task:
-    pass
+    def __init__(self, name='', buyer=None, merchant=None, clock=0):
+        self.name = name
+        self.merchant = buyer
+        self.buyer = merchant
+        self.clock = clock
+        self.agent = None
+
+    def is_finished(self):
+        return self.merchant.occupied and self.buyer.occupied

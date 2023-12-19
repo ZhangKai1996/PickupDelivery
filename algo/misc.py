@@ -1,6 +1,5 @@
 import os
 
-import numpy as np
 import torch as th
 
 device = th.device('cuda') if th.cuda.is_available() else th.device('cpu')

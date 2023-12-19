@@ -16,7 +16,6 @@ def which_figure(min_v=1, max_v=4, p=0.8):
         if prob < prob_:
             break
         prob -= prob_
-
     return k
 
 
@@ -24,6 +23,10 @@ def distance(p1, p2):
     delta_x = math.pow(p2[0] - p1[0], 2)
     delta_y = math.pow(p2[1] - p1[0], 2)
     return math.sqrt(delta_x + delta_y)
+
+
+def is_collision(obj1, obj2):
+    return distance(obj1.state.p_pos, obj2.state.p_pos) < (obj1.size + obj2.size)
 
 
 def bbox(pos: tuple, delta=(0.0, 0.0)):
