@@ -37,12 +37,13 @@ class Scenario:
         self.contact_margin = 1e-3
         # global property
         self.collaborative = True
+        self.size = 500
         # make initial conditions
         self.reset()
 
     @property
     def entities(self):
-        return self.agents + self.landmarks
+        return self.agents
 
     def reset(self):
         # random properties for agents
@@ -59,12 +60,13 @@ class Scenario:
             merchant.state.p_pos = np.random.uniform(-1, +1, self.dim_p)
             merchant.state.p_vel = np.zeros(self.dim_p)
             merchant.occupied = False
-        return [self.observation(agent) for agent in self.agents]
+        return np.array([self.observation(agent) for agent in self.agents])
 
     def reward(self, agent):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
         rew = 0
-        for l in self.landmarks:
+        for task in self.tasks:
+            l = task.merchant
             dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in self.agents]
             rew -= min(dists)
         if agent.collide:
@@ -117,15 +119,15 @@ class Scenario:
             obs_n.append(self.observation(agent))
             reward_n.append(self.reward(agent))
             done_n.append(self.done(agent))
-        return obs_n, reward_n, done_n, {}
+        return np.array(obs_n), reward_n, done_n, {}
 
     # gather agent action forces
     def apply_action_force(self, p_force):
         # set applied forces
         for i, agent in enumerate(self.agents):
             if agent.movable:
-                noise = np.random.randn(*agent.action.u.shape) * agent.u_noise if agent.u_noise else 0.0
-                p_force[i] = agent.action.u + noise
+                noise = np.random.randn(*agent.action.shape) * agent.u_noise if agent.u_noise else 0.0
+                p_force[i] = agent.action + noise
         return p_force
 
     # gather physical forces acting on entities

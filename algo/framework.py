@@ -1,111 +1,190 @@
-import random
+from copy import deepcopy
 
+import numpy as np
 import torch as th
-import torch.optim as optim
-import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
-from algo.memory import ReplayMemory
-from algo.misc import LinearSchedule
+from algo.misc import get_folder, FloatTensor
 from algo.trainer import MetaController, Controller
+from algo.visual import net_visual
 
-d_type = th.cuda.FloatTensor
 
 
 class HieTrainer:
-    def __init__(self, args):
+    def __init__(self, dim_obs, dim_act, args, folder=None):
         self.args = args
-
-        self.num_goal = args.num_tasks
-        self.batch_size = args.batch_size
-
         # Construct meta-controller and controller
-        self.meta_controller = MetaController().type(d_type)
-        self.controller = Controller().type(d_type)
-        # Construct target meta-controller and target controller
-        self.target_meta_controller = MetaController().type(d_type)
-        self.target_controller = Controller().type(d_type)
-        # Construct the optimizers for meta-controller and controller
-        self.meta_optimizer = optim.Adam(self.meta_controller.parameters(), lr=args.a_lr)
-        self.ctrl_optimizer = optim.Adam(self.controller.parameters(), lr=args.a_lr)
-        # Construct the replay memory for meta-controller and controller
-        self.meta_replay_memory = ReplayMemory(args.memory_length)
-        self.ctrl_replay_memory = ReplayMemory(args.memory_length)
+        self.meta_controller = MetaController(dim_obs, args)
+        self.controller = Controller(dim_obs, dim_act, args)
+        # Record the data of meta-controller and controller during training
+        self.meta_c_losses, self.meta_a_losses = [], []
+        self.ctrl_c_losses, self.ctrl_a_losses = [], []
+        # Build the save path of file, such as graph, log and parameters
+        self.__addiction(args, folder=folder)
 
-        self.schedule = LinearSchedule(50000, 0.1, 1)
+    def __addiction(self, args, folder):
+        self.writer = None
+        if folder is None:
+            return
+
+        self.path = get_folder(folder, has_graph=True, has_log=True, allow_exist=True)
+        if self.path['log_path'] is not None:
+            self.writer = SummaryWriter(self.path['log_path'])
+
+        if self.path['graph_path'] is not None:
+            print('Draw the net of Actor and Critic in Controller!')
+            prefix = 'ctrl'
+            net_visual(
+                dim_input=[self.controller.dim(label='actor')[0], ],
+                net=self.controller.actors[0],
+                d_type=FloatTensor,
+                filename=prefix+'_actor',
+                directory=self.path['graph_path'],
+                format='png',
+                cleanup=True
+            )
+            net_visual(
+                dim_input=self.controller.dim(label='critic'),
+                net=self.controller.critics[0],
+                d_type=FloatTensor,
+                filename=prefix+'_critic',
+                directory=self.path['graph_path'],
+                format='png',
+                cleanup=True
+            )
+            print('Draw the net of Actor and Critic in Meta-Controller!')
+            prefix = 'meta'
+            net_visual(
+                dim_input=[self.meta_controller.dim(label='actor')[0], ],
+                net=self.meta_controller.actors[0],
+                d_type=FloatTensor,
+                filename=prefix+'_actor',
+                directory=self.path['graph_path'],
+                format='png',
+                cleanup=True
+            )
+            net_visual(
+                dim_input=self.meta_controller.dim(label='critic'),
+                net=self.meta_controller.critics[0],
+                d_type=FloatTensor,
+                filename=prefix+'_critic',
+                directory=self.path['graph_path'],
+                format='png',
+                cleanup=True
+            )
+            print()
 
     def get_intrinsic_reward(self, goal, state):
         return 1.0 if goal == state else 0.0
 
     def select_goal(self, state, t):
-        if random.random() > self.schedule.value(t):
-            state = th.from_numpy(state).type(d_type)
-            return self.meta_controller(state).data.max(1)[1].cpu()
-        return th.IntTensor([random.randrange(self.num_goal)])
+        return self.meta_controller.act(state, t)
 
     def select_action(self, joint_state_goal, t):
-        if random.random() > self.schedule.value(t):
-            joint_state_goal = th.from_numpy(joint_state_goal).type(d_type)
-            return self.controller(joint_state_goal).data.max(1)[1].cpu()
-        return th.IntTensor([random.randrange(self.num_action)])
+        return self.controller.act(joint_state_goal, t)
 
-    def update_meta_controller(self, gamma=1.0):
-        if len(self.meta_replay_memory) < self.batch_size:
-            return
+    def add(self, *args, label='ctrl'):
+        if label == 'ctrl':
+            self.controller.add_experience(*args)
+        elif label == 'meta':
+            self.meta_controller.add_experience(*args)
+        else:
+            raise NotImplementedError
 
-        state_batch, goal_batch, n_state_batch, rew_batch, done_mask = self.meta_replay_memory.sample(self.batch_size)
-        state_batch = th.from_numpy(state_batch).type(d_type)
-        goal_batch = th.from_numpy(goal_batch).long()
-        n_state_batch = th.from_numpy(n_state_batch).type(d_type)
-        rew_batch = th.from_numpy(rew_batch).type(d_type)
-        not_done_mask = th.from_numpy(1 - done_mask).type(d_type)
-        # Compute current Q value, meta_controller takes only state and output value for every state-goal pair
-        # We choose Q based on goal chosen.
-        current_Q_values = self.meta_controller(state_batch).gather(1, goal_batch.unsqueeze(1))
-        # Compute next Q value based on which goal gives max Q values
-        # Detach variable from the current graph since we don't want gradients for next Q to propagated
-        next_max_q = self.target_meta_controller(n_state_batch).detach().max(1)[0]
-        next_Q_values = not_done_mask * next_max_q
-        # Compute the target of the current Q values
-        target_Q_values = rew_batch + (gamma * next_Q_values)
-        # Compute Bellman error (using Huber loss)
-        loss = F.smooth_l1_loss(current_Q_values, target_Q_values)
+    def update_controller(self, t):
+        c_loss, a_loss = self.controller.update(t)
+        self.ctrl_c_losses.append(c_loss)
+        self.ctrl_a_losses.append(a_loss)
+        if t % 100 == 0:
+            prefix = 'ctrl'
+            # Record and visual the loss value of Actor and Critic
+            mean_c_loss = np.mean(self.ctrl_c_losses, axis=0)
+            self.scalars(
+                key=prefix+'_critic_loss',
+                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_c_loss)},
+                episode=t
+            )
+            mean_a_loss = np.mean(self.ctrl_a_losses, axis=0)
+            self.scalars(
+                key=prefix+'_actor_loss',
+                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_a_loss)},
+                episode=t
+            )
+            self.ctrl_c_losses, self.ctrl_a_losses = [], []
 
-        # Copy Q to target Q before updating parameters of Q
-        self.target_meta_controller.load_state_dict(self.meta_controller.state_dict())
-        # Optimize the model
-        self.meta_optimizer.zero_grad()
-        loss.backward()
-        for param in self.meta_controller.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.meta_optimizer.step()
+    def update_meta_controller(self, t):
+        c_loss, a_loss = self.meta_controller.update(t)
+        self.meta_c_losses.append(c_loss)
+        self.meta_a_losses.append(a_loss)
+        if t % 100 == 0:
+            prefix = 'meta'
+            # Record and visual the loss value of Actor and Critic
+            mean_c_loss = np.mean(self.meta_c_losses, axis=0)
+            self.scalars(
+                key=prefix+'_critic_loss',
+                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_c_loss)},
+                episode=t
+            )
+            mean_a_loss = np.mean(self.meta_a_losses, axis=0)
+            self.scalars(
+                key=prefix+'_actor_loss',
+                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_a_loss)},
+                episode=t
+            )
+            self.meta_c_losses, self.meta_a_losses = [], []
 
-    def update_controller(self, gamma=1.0):
-        if len(self.ctrl_replay_memory) < self.batch_size:
-            return
-        state_goal_batch, action_batch, next_state_goal_batch, in_reward_batch, done_mask = \
-            self.ctrl_replay_memory.sample(self.batch_size)
-        state_goal_batch = th.from_numpy(state_goal_batch).type(d_type)
-        action_batch = th.from_numpy(action_batch).long()
-        next_state_goal_batch = th.from_numpy(next_state_goal_batch).type(d_type)
-        in_reward_batch = th.from_numpy(in_reward_batch).type(d_type)
-        not_done_mask = th.from_numpy(1 - done_mask).type(d_type)
-        # Compute current Q value, controller takes (state,goal) and output value for every (state,goal)-action pair
-        # We choose Q based on action taken.
-        current_Q_values = self.controller(state_goal_batch).gather(1, action_batch.unsqueeze(1))
-        # Compute next Q value based on which goal gives max Q values
-        # Detach variable from the current graph since we don't want gradients for next Q to propagated
-        next_max_q = self.target_controller(next_state_goal_batch).detach().max(1)[0]
-        next_Q_values = not_done_mask * next_max_q
-        # Compute the target of the current Q values
-        target_Q_values = in_reward_batch + (gamma * next_Q_values)
-        # Compute Bellman error (using Huber loss)
-        loss = F.smooth_l1_loss(current_Q_values, target_Q_values)
+    def load_model(self, load_path=None):
+        if load_path is None:
+            load_path = self.path['model_path']
 
-        # Copy Q to target Q before updating parameters of Q
-        self.target_controller.load_state_dict(self.controller.state_dict())
-        # Optimize the model
-        self.ctrl_optimizer.zero_grad()
-        loss.backward()
-        for param in self.controller.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.ctrl_optimizer.step()
+        if load_path is not None:
+            prefix = 'ctrl'
+            iterator = zip(self.controller.actors, self.controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                a_state_dict = th.load(load_path + prefix+'_actor_{}.pth'.format(i)).state_dict()
+                c_state_dict = th.load(load_path + prefix+'_critic_{}.pth'.format(i)).state_dict()
+                a.load_state_dict(a_state_dict)
+                c.load_state_dict(c_state_dict)
+                self.controller.actors_target[i] = deepcopy(a)
+                self.controller.critics_target[i] = deepcopy(c)
+            prefix = 'meta'
+            iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                a_state_dict = th.load(load_path + prefix+'_actor_{}.pth'.format(i)).state_dict()
+                c_state_dict = th.load(load_path + prefix+'_critic_{}.pth'.format(i)).state_dict()
+                a.load_state_dict(a_state_dict)
+                c.load_state_dict(c_state_dict)
+                self.meta_controller.actors_target[i] = deepcopy(a)
+                self.meta_controller.critics_target[i] = deepcopy(c)
+        else:
+            print('Load path is empty!')
+            raise NotImplementedError
+
+    def save_model(self, save_path=None):
+        if save_path is None:
+            save_path = self.path['model_path']
+
+        if save_path is not None:
+            prefix = 'ctrl'
+            iterator = zip(self.controller.actors, self.controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
+                th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
+            prefix = 'meta'
+            iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
+                th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
+        else:
+            print('Save path is empty!')
+            raise NotImplementedError
+
+    def scalars(self, key, value, episode):
+        self.writer.add_scalars(key, value, episode)
+
+    def scalar(self, key, value, episode):
+        self.writer.add_scalar(key, value, episode)
+
+    def close(self):
+        if self.writer is not None:
+            self.writer.close()

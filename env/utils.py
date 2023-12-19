@@ -29,6 +29,14 @@ def is_collision(obj1, obj2):
     return distance(obj1.state.p_pos, obj2.state.p_pos) < (obj1.size + obj2.size)
 
 
+def border_func(x, min_v=0.0, max_v=1.0, d_type=float):
+    """
+    与最大值取较小者，与最小值取较大者，返回值的类型取决于d_type。
+    """
+    print(x, min_v, max_v, d_type)
+    return d_type(min(max(x, min_v), max_v))
+
+
 def bbox(pos: tuple, delta=(0.0, 0.0)):
     """
     :return: (min_x, min_y, max_x, max_y)

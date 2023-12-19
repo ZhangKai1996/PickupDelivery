@@ -7,7 +7,10 @@ FloatTensor = th.FloatTensor if not th.cuda.is_available() else th.cuda.FloatTen
 ByteTensor = th.ByteTensor if not th.cuda.is_available() else th.cuda.ByteTensor
 
 
-def get_folder(folder, root='trained', has_log=False, has_graph=False, has_model=False, allow_exist=False):
+def get_folder(folder, root='trained', has_log=False, has_graph=False, has_model=True, allow_exist=False):
+    """
+    数据记录（计算图、logs和网络参数）的保存文件路径
+    """
     folder = os.path.join(root, folder)
     if os.path.exists(folder):
         if not allow_exist:

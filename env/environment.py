@@ -39,10 +39,14 @@ class CityEnv(gym.Env):
                 self.action_space_n.append(action_space)
             # observation space
             self.observation_space_n.append(
-                spaces.Box(low=-np.inf, high=+np.inf, shape=(100,100), dtype=np.float32)
+                spaces.Box(low=-np.inf, high=+np.inf, shape=(3,100,100), dtype=np.float32)
             )
         self.scenario = scenario
         self.cv_render = None
+
+    @property
+    def size(self):
+        return self.scenario.size
 
     def reset(self, **kwargs):
         return self.scenario.reset()
