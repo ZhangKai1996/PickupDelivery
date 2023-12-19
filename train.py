@@ -1,145 +1,182 @@
+from collections import defaultdict
+
 import numpy as np
-import time
+import torch.autograd as autograd
 
-import algo.tf_util as U
-from algo.maddpg import MADDPGAgentTrainer
-from env.environment import MultiAgentEnv
-
-# import tf_slim.layers as layers
-# import tensorflow.compat.v1 as tf
-# tf.disable_v2_behavior()
-
-import tensorflow as tf
-import tensorflow.contrib.layers as layers
+from env.mdp import StochasticEnv
+from algo.hdqn_mdp import HieDQN
 
 
-def parse_args():
-    import argparse
-
-    parser = argparse.ArgumentParser("Reinforcement Learning experiments for multiagent environments")
-    # Environment
-    parser.add_argument("--max-episode-len", type=int, default=100, help="maximum episode length")
-    parser.add_argument("--num-episodes", type=int, default=1000000, help="number of episodes")
-    parser.add_argument("--good-policy", type=str, default="maddpg", help="policy for good agents")
-    parser.add_argument("--adv-policy", type=str, default="maddpg", help="policy of adversaries")
-    # Core training parameters
-    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate for Adam optimizer")
-    parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
-    parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
-    parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
-    # Checkpointing
-    parser.add_argument("--exp-name", type=str, default=None, help="name of the experiment")
-    parser.add_argument("--save-dir", type=str, default="./trained/policy/",
-                        help="directory in which training state and model should be saved")
-    parser.add_argument("--save-rate", type=int, default=1000,
-                        help="save model once every time this many episodes are completed")
-    parser.add_argument("--load-dir", type=str, default="./trained/policy/",
-                        help="directory in which training state and model are loaded")
-    # Evaluation
-    parser.add_argument("--display", action="store_true", default=False)
-    return parser.parse_args()
+class Variable(autograd.Variable):
+    def __init__(self, data, *args, **kwargs):
+        super(Variable, self).__init__(data, *args, **kwargs)
 
 
-def mlp_model(inputs, num_outputs, scope, reuse=False, num_units=64, rnn_cell=None):
-    # This model takes as input an observation and returns values of all actions
-    with tf.variable_scope(scope, reuse=reuse):
-        out = inputs
-        out = layers.fully_connected(out, num_outputs=num_units, activation_fn=tf.nn.relu)
-        out = layers.fully_connected(out, num_outputs=num_units, activation_fn=tf.nn.relu)
-        out = layers.fully_connected(out, num_outputs=num_outputs, activation_fn=None)
-        return out
+def train(env, trainer, num_episodes, gamma=1.0):
+    """The h-DQN learning algorithm.
+    All schedules are w.r.t. total number of steps taken in the environment.
+    Parameters
+    ----------
+    env:
+        gym environment to train on.
+    trainer:
+        a h-DQN agent consists of a meta-controller and controller.
+    num_episodes:
+        Number (can be divided by 1000) of episodes to run for. Ex: 12000
+    gamma: float
+        Discount Factor
+    """
+    total_timestep = 0
+    meta_timestep = 0
+    ctrl_timestep = defaultdict(int)
+
+    for i_thousand_episode in range(int(np.floor(num_episodes / 1000))):
+        for i_episode in range(1000):
+            episode_length = 0
+            state = env.reset(onehot=True)
+
+            done = False
+            while not done:
+                meta_timestep += 1
+                goal = trainer.select_goal(state, total_timestep)[0]
+
+                total_extrinsic_rew = 0
+                while True:
+                    total_timestep += 1
+                    episode_length += 1
+                    ctrl_timestep[goal] += 1
+                    # Get annealing exploration rate (epsilon) from exploration_schedule
+                    joint_state_goal = np.concatenate([state, goal], axis=1)
+                    action = trainer.select_action(joint_state_goal, total_timestep)[0]
+                    # Step the env and store the transition
+                    n_state, extrinsic_rew, done, _ = env.step(action)
+                    goal_reached = n_state == goal
+
+                    intrinsic_rew = trainer.get_intrinsic_reward(goal, n_state)
+
+                    joint_n_state_goal = np.concatenate([n_state, goal], axis=1)
+                    trainer.ctrl_replay_memory.push(joint_state_goal, action, joint_n_state_goal, intrinsic_rew, done)
+                    # Update Both meta-controller and controller
+                    trainer.update_meta_controller(gamma)
+                    trainer.update_controller(gamma)
+
+                    total_extrinsic_rew += extrinsic_rew
+                    state = n_state
+
+                    if done or goal_reached:
+                        # Goal Finished
+                        trainer.meta_replay_memory.push(state, goal, n_state, total_extrinsic_rew, done)
+                        break
 
 
-def get_trainers(env, args):
-    obs_shape_n = [env.observation_space[i].shape for i in range(env.n)]
+# def train(env, trainer, num_episodes, schedule, gamma=1.0):
+#     """The h-DQN learning algorithm.
+#     All schedules are w.r.t. total number of steps taken in the environment.
+#     Parameters
+#     ----------
+#     env:
+#         gym environment to train on.
+#     trainer:
+#         a h-DQN agent consists of a meta-controller and controller.
+#     num_episodes:
+#         Number (can be divided by 1000) of episodes to run for. Ex: 12000
+#     schedule:
+#         schedule for probability of choosing random action.
+#     gamma: float
+#         Discount Factor
+#     """
+#     total_timestep = 0
+#     meta_timestep = 0
+#     ctrl_timestep = defaultdict(int)
+#
+#     for i_thousand_episode in range(int(np.floor(num_episodes / 1000))):
+#         for i_episode in range(1000):
+#             episode_length = 0
+#             current_state = env.reset()
+#             encoded_current_state = one_hot(current_state)
+#
+#             done = False
+#             while not done:
+#                 meta_timestep += 1
+#                 # Get annealing exploration rate (epsilon) from exploration_schedule
+#                 meta_epsilon = schedule.value(total_timestep)
+#
+#                 goal = trainer.select_goal(encoded_current_state, meta_epsilon)[0]
+#                 encoded_goal = one_hot(goal)
+#
+#                 total_extrinsic_rew = 0
+#                 goal_reached = False
+#                 while not done and not goal_reached:
+#                     total_timestep += 1
+#                     episode_length += 1
+#                     ctrl_timestep[goal] += 1
+#                     # Get annealing exploration rate (epsilon) from exploration_schedule
+#                     ctrl_epsilon = schedule.value(total_timestep)
+#                     joint_state_goal = np.concatenate([encoded_current_state, encoded_goal], axis=1)
+#                     action = trainer.select_action(joint_state_goal, ctrl_epsilon)[0]
+#                     # Step the env and store the transition
+#                     next_state, extrinsic_rew, done, _ = env.step(action)
+#
+#                     encoded_n_state = one_hot(next_state)
+#                     intrinsic_rew = trainer.get_intrinsic_reward(goal, next_state)
+#                     goal_reached = next_state == goal
+#
+#                     joint_n_state_goal = np.concatenate([encoded_n_state, encoded_goal], axis=1)
+#                     trainer.ctrl_replay_memory.push(joint_state_goal, action, joint_n_state_goal, intrinsic_rew, done)
+#                     # Update Both meta-controller and controller
+#                     trainer.update_meta_controller(gamma)
+#                     trainer.update_controller(gamma)
+#
+#                     total_extrinsic_rew += extrinsic_rew
+#                     current_state = next_state
+#                     encoded_current_state = encoded_n_state
+#                 # Goal Finished
+#                 trainer.meta_replay_memory.push(encoded_current_state, goal, encoded_n_state, total_extrinsic_rew, done)
 
-    trainers = []
-    for i in range(env.n):
-        trainers.append(
-            MADDPGAgentTrainer(
-                "agent_%d" % i, mlp_model,
-                obs_shape_n, env.action_space,
-                i, args,
-                local_q_func=args.good_policy == 'ddpg'
-            )
-        )
-    return trainers
 
+def main(args):
+    lr = 0.00025
 
-def train():
-    args = parse_args()
-
-    with U.single_threaded_session():
-        # Create environment
-        env = MultiAgentEnv()
-        # Create agent trainers
-        trainers = get_trainers(env, args)
-        print('Using good policy {} and adv policy {}'.format(args.good_policy, args.adv_policy))
-        # Initialize
-        U.initialize()
-        # Load previous results, if necessary
-        if args.display and args.load_dir is not None:
-            print('Loading previous state...')
-            U.load_state(args.load_dir)
-
-        episode_rewards = [0.0]  # sum of rewards for all agents
-        success = []
-        saver = tf.train.Saver()
-        obs_n = env.reset()
-        episode, episode_step, train_step = 0, 0, 0
-        t_start = time.time()
-
-        print('Starting iterations...')
-        while True:
-            # get action
-            action_n = [agent.action(obs) for agent, obs in zip(trainers, obs_n)]
-            # environment step
-            new_obs_n, rew_n, done, info_n = env.step(action_n)
-            # collect experience
-            for i, agent in enumerate(trainers):
-                agent.experience(obs_n[i], action_n[i], rew_n[i], new_obs_n[i], done)
-            obs_n = new_obs_n
-            for i, rew in enumerate(rew_n):
-                episode_rewards[-1] += rew
-
-            # increment global step counter
-            episode_step += 1
-            train_step += 1
-            terminal = done or (episode_step >= args.max_episode_len)
-            if terminal:
-                obs_n = env.reset()
-                episode_step = 0
-                episode_rewards.append(0)
-                success.append(int(done))
-                episode += 1
-
-            # for displaying learned policies
-            if args.display:
-                env.render()
-                continue
-
-            # update all trainers, if not in display or benchmark mode
-            loss = None
-            for agent in trainers:
-                agent.preupdate()
-            for agent in trainers:
-                loss = agent.update(trainers, train_step)
-
-            # save model, display training output
-            if terminal and (episode > 0 and episode % args.save_rate == 0):
-                U.save_state(args.save_dir, saver=saver)
-                # print statement depends on whether there are adversaries or not
-                print("steps: {:>8d}, episodes: {:>7d}, reward: {:>+8.2f}, sr: {:>.4f}, time: {:>6.2f}".format(
-                    train_step, episode, np.mean(episode_rewards), np.mean(success), time.time() - t_start))
-                t_start = time.time()
-                episode_rewards = [0.0]
-                success = []
-
-            # saves final episode reward for plotting training curve later
-            if episode > args.num_episodes:
-                print('...Finished total of {} episodes.'.format(episode))
-                break
+    trainer = HieDQN(
+        replay_memory_size=int(1e6),
+        batch_size=args.batch_size,
+        lr=lr
+    )
+    train(
+        env=StochasticEnv(),
+        trainer=trainer,
+        num_episodes=args.num_episodes,
+        gamma=args.gamma,
+    )
 
 
 if __name__ == '__main__':
-    train()
+    import argparse
+
+    parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
+    # Environment
+    parser.add_argument("--num-riders", type=int, default=5, help="number of the agent (drone or car)")
+    parser.add_argument("--max-episode-len", type=int, default=100, help="maximum episode length")
+    parser.add_argument("--num-episodes", type=int, default=60000, help="number of episodes")
+    parser.add_argument('--memory-length', default=int(1e6), type=int, help='number of experience replay pool')
+    parser.add_argument("--learning-start", type=int, default=50, help="start updating after this number of step")
+    parser.add_argument("--good-policy", type=str, default="algo", help="policy for good agents")
+    parser.add_argument("--adv-policy", type=str, default="algo", help="policy of adversaries")
+    # Core training parameters
+    parser.add_argument("--a-lr", type=float, default=1e-4, help="learning rate for Actor Adam optimizer")
+    parser.add_argument("--c-lr", type=float, default=1e-3, help="learning rate for Critic Adam optimizer")
+    parser.add_argument("--gamma", type=float, default=0.95, help="discount factor")
+    parser.add_argument('--tau', default=0.001, type=float, help='rate of soft update')
+    parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
+    parser.add_argument("--num-units", type=int, default=128, help="number of units in the mlp")
+    # Checkpointing
+    parser.add_argument("--exp-name", type=str, default='train', help="name of the experiment")
+    parser.add_argument("--seed", type=int, default=1111, help="name of the experiment")
+    parser.add_argument('--render', default=True, type=bool)
+    parser.add_argument("--save-rate", type=int, default=10,
+                        help="save model once every time this many episodes are completed")
+    parser.add_argument("--load-dir", type=str, default=None,
+                        help="directory in which training state and model are loaded")
+
+    args_ = parser.parse_args()
+    main(args=args_)
