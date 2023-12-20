@@ -8,7 +8,6 @@ from env.rendering import CVRender
 
 class CityEnv(gym.Env):
     def __init__(self, args):
-        self.n = args.num_agents
         scenario = Scenario(args)
 
         # environment parameters
@@ -22,36 +21,34 @@ class CityEnv(gym.Env):
         self.time = 0
 
         # configure spaces
-        self.action_space_n = []
-        self.observation_space_n = []
-        for agent in scenario.agents:
-            # physical action space
-            if self.discrete_action_space:
-                action_space = spaces.Discrete(scenario.dim_p * 2 + 1)
-            else:
-                action_space = spaces.Box(
-                    low=-agent.u_range,
-                    high=+agent.u_range,
-                    shape=(scenario.dim_p,),
-                    dtype=np.float32
-                )
-            if agent.movable:
-                self.action_space_n.append(action_space)
-            # observation space
-            self.observation_space_n.append(
-                spaces.Box(low=-np.inf, high=+np.inf, shape=(3,100,100), dtype=np.float32)
+        if self.discrete_action_space:
+            self.act_space_ctrl = spaces.Discrete(scenario.dim_p * 2 + 1)
+        else:
+            self.act_space_ctrl = spaces.Box(
+                low=-scenario.agents[0].u_range,
+                high=scenario.agents[0].u_range,
+                shape=(scenario.dim_p,),
+                dtype=np.float32
             )
+        self.act_space_meta = spaces.Discrete(args.num_agents)
+        dim_obs_ctrl = scenario.observation(scenario.agents[0]).shape[0]
+        self.obs_space_ctrl = spaces.Box(low=-np.inf, high=+np.inf, shape=(dim_obs_ctrl,), dtype=np.float32)
+        dim_obs_meta = scenario.observation_meta().shape[-1]
+        self.obs_space_meta = spaces.Box(low=-np.inf, high=+np.inf, shape=(dim_obs_meta,), dtype=np.float32)
+
         self.scenario = scenario
         self.cv_render = None
 
-    @property
-    def size(self):
-        return self.scenario.size
+    def task_assignment(self, scheme):
+        self.scenario.task_assignment(scheme)
+
+    def observation_meta(self):
+        return self.scenario.observation_meta()
 
     def reset(self, **kwargs):
         return self.scenario.reset()
 
-    def _set_action(self, action, agent, action_space):
+    def _set_action(self, action, agent):
         agent.action = np.zeros(self.scenario.dim_p)
         action = [action]
 
@@ -85,7 +82,7 @@ class CityEnv(gym.Env):
     def step(self, action_n):
         # set action for each agent
         for i, agent in enumerate(self.scenario.agents):
-            self._set_action(action_n[i], agent, self.action_space_n[i])
+            self._set_action(action_n[i], agent)
         # advance scenario state
         return self.scenario.step()
 

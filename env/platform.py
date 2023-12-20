@@ -1,7 +1,4 @@
-from typing import Dict, Tuple, List
-
 from .utils import *
-from .rendering import CVRender
 
 
 class Platform:
@@ -23,21 +20,6 @@ class Platform:
         self.walls = pos_dict['walls']
         self.drones = [Drone(name='Drone_{}'.format(i + 1), pos=pos, radius=radius)
                        for i, pos in enumerate(pos_dict['drones'])]
-
-    def global_info(self):
-        return 'Clock: {}, Drone: {}, Buyer:{}, Merchant:{}'.format(
-            self.clock, len(self.drones), len(self.buyers), len(self.merchants)
-        )
-
-    def get_obs(self, shape='circle'):
-        width = height = self.radius
-        if shape == 'circle':
-            return []
-        if shape == 'rectangle':
-            return [bbox(wall, delta=(width, height)) for wall in self.walls]
-        if shape == 'boundary':
-            return [width, height, self.size-width, self.size-height]
-        raise NotImplementedError
 
     def __update_buyers(self, ):
         buyers = []
@@ -86,28 +68,3 @@ class Platform:
                 continue
             # Collision between drones and walls
             drone.detect(self.walls)
-
-    def step(self, actions=None, duration=1.0):
-        self.clock += 1
-        self.__update_buyers()
-        if actions is None:
-            return
-
-        for i, (drone, action) in enumerate(zip(self.drones, actions)):
-            drone.execute_action(action, self.size, duration=duration)
-        self.__detect_collision()
-
-        print(self.clock)
-        for i, drone in enumerate(self.drones):
-            action = actions[i]
-            print('\t>>>', drone, 'Delta: ({:>+5.3f},{:>+5.3f})'.format(action[0], action[1]))
-
-    def render(self, show=False, **kwargs):
-        if self.cv_render is None:
-            self.cv_render = CVRender(self)
-            self.cv_render.draw_dynamic(**kwargs)
-        self.cv_render.draw(show=show)
-
-    def close(self):
-        if self.cv_render is not None:
-            self.cv_render.close()

@@ -62,6 +62,8 @@ class Agent(Entity):
         self.u_range = 1.0
         # action
         self.action = None
+        # tasks
+        self.tasks = []
 
 
 class Rider(Entity):
@@ -130,4 +132,8 @@ class Task:
         self.agent = None
 
     def is_finished(self):
-        return self.merchant.occupied and self.buyer.occupied
+        return (
+            self.agent is not None
+            and self.merchant.occupied
+            and self.buyer.occupied
+        )

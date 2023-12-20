@@ -9,12 +9,12 @@ def parse_args():
 
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
     # Environment
-    parser.add_argument("--num-agents", type=int, default=5, help="number of the agent (drone or car)")
-    parser.add_argument("--num-tasks", type=int, default=10, help="number of tasks (the pair of <m,b>)")
-    parser.add_argument("--max-episode-len", type=int, default=100, help="maximum episode length")
+    parser.add_argument("--num-agents", type=int, default=3, help="number of the agent (drone or car)")
+    parser.add_argument("--num-tasks", type=int, default=3, help="number of tasks (the pair of <m,b>)")
+    parser.add_argument("--max-episode-len", type=int, default=50, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=60000, help="number of episodes")
     parser.add_argument('--memory-length', default=int(1e6), type=int, help='number of experience replay pool')
-    parser.add_argument("--learning-start", type=int, default=50, help="start updating after this number of step")
+    parser.add_argument("--learning-start", type=int, default=100, help="start updating after this number of step")
     parser.add_argument("--good-policy", type=str, default="algo", help="policy for good agents")
     parser.add_argument("--adv-policy", type=str, default="algo", help="policy of adversaries")
     # Core training parameters
@@ -34,40 +34,51 @@ def parse_args():
     return parser.parse_args()
 
 
-def train(env, trainer, num_episodes):
-    total_step = 0
-    for episode in range(num_episodes):
-        state, done = env.reset(), False
-        print(np.array(state).shape)
+def train(env, trainer, num_episodes, max_episode_len):
+    rew_stats, sr_stats = [], []
+    ctrl_step = 0
+    for episode in range(1, num_episodes+1):
+        obs_n, done = env.reset(), False
+        obs_n_meta = env.observation_meta()
+        scheme = trainer.select_scheme(obs_n_meta, episode)
+        env.task_assignment(scheme)
 
-        while not done:
-            goal = trainer.select_goal(state, total_step)
-            print(goal)
-            total_rew = 0
-            while True:
-                total_step += 1
-                # Select the action according to joint state and goal
-                joint_state_goal = np.concatenate([state, goal], axis=1)
-                action = trainer.select_action(joint_state_goal, total_step)[0]
-                # Step the env and return outputs
-                n_state, rew, done, _ = env.step(action)
-                # Get the intrinsic reward for controller
-                intrinsic_rew = trainer.get_intrinsic_reward(goal, n_state)
-                # Store the experience for controller
-                joint_n_state_goal = np.concatenate([n_state, goal], axis=1)
-                trainer.add(joint_state_goal, action, joint_n_state_goal, intrinsic_rew, done, label='ctrl')
-                # Update Both meta-controller and controller
-                trainer.update_meta_controller(total_step)
-                trainer.update_controller(total_step)
+        episode_step = 0
+        rew_sum = [0.0, 0.0]
+        while True:
+            ctrl_step += 1
+            episode_step += 1
+            act_n = trainer.select_action(obs_n, ctrl_step)
+            # Step the env and return outputs
+            next_obs_n, (rew_n, rew_beta), done_n, _ = env.step(act_n)
+            done = all(done_n)
+            # Store the experience for controller
+            trainer.add(obs_n, act_n, next_obs_n, rew_n, done_n, label='ctrl')
+            # Update controller
+            trainer.update_controller(ctrl_step)
+            # env.render(show=True)
 
-                total_rew += rew
-                state = n_state
-                if done or n_state == goal:
-                    break
-            # Goal Finished and store experience for meta-controller
-            trainer.add(state, goal, n_state, total_rew, done, label='meta')
-            if episode % 10 == 0:
-                trainer.save_model()
+            rew_sum[0] += sum(rew_n)
+            rew_sum[-1] += rew_beta
+            obs_n = next_obs_n
+            if done or episode_step >= max_episode_len:
+                break
+        # Store experience for meta-controller
+        next_obs_n_beta = env.observation_meta()
+        trainer.add(obs_n_meta, scheme, next_obs_n_beta, rew_sum[-1], 1.0, label='meta')
+        # print(ctrl_step, rew_sum)
+        rew_stats.append(rew_sum)
+        sr_stats.append(int(done))
+        # Update meta-controller
+        trainer.update_meta_controller(episode)
+        if episode % 10 == 0:
+            mean_rew = np.mean(rew_stats, axis=0)
+            mean_sr = np.mean(sr_stats)
+            print('Episode:{:>6d}, Step:{:>7d}, Rew(ctrl):{:>+7.2f}, Rew(meta):{:>+7.2f}, SR:{:>3.2f}'.format(
+                episode, ctrl_step, mean_rew[0], mean_rew[1], mean_sr))
+            rew_stats, sr_stats = [], []
+            # Save the model every 10 episodes.
+            trainer.save_model()
 
 def make_exp_id(args):
     return 'exp_{}_{}_{}_{}_{}_{}_{}_{}'.format(
@@ -83,16 +94,24 @@ def main():
     env = CityEnv(args=args)
     # Create a hierarchical trainer
     trainer = HieTrainer(
-        dim_obs=env.observation_space_n[0].shape,
-        dim_act=env.action_space_n[0].n,
-        args=args,
-        folder=make_exp_id(args)
+        env=env,
+        num_tasks=args.num_tasks,
+        num_agents=args.num_agents,
+        folder=make_exp_id(args),
+        tau=args.tau,
+        a_lr=args.a_lr,
+        c_lr=args.c_lr,
+        gamma=args.gamma,
+        batch_size=args.batch_size,
+        learning_start=args.learning_start,
+        memory_length = args.memory_length,
     )
     # Train with interaction.
     train(
         env=env,
         trainer=trainer,
         num_episodes=args.num_episodes,
+        max_episode_len=args.max_episode_len
     )
     env.close()
 

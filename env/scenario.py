@@ -1,7 +1,12 @@
 import numpy as np
 
 from env.core import Agent, Task, Buyer, Merchant
-from env.utils import is_collision
+from env.utils import distance
+
+
+def is_collision(obj1, obj2):
+    # print(obj1.state.p_pos, obj2.state.p_pos, distance(obj1.state.p_pos, obj2.state.p_pos), (obj1.size + obj2.size))
+    return distance(obj1.state.p_pos, obj2.state.p_pos) <= (obj1.size + obj2.size)
 
 
 class Scenario:
@@ -12,20 +17,20 @@ class Scenario:
             agent.name = 'agent %d'%i
             agent.collide = True,
             agent.movable = True
-            agent.size = 0.10
-            agent.color = (0.35, 0.35, 0.85)
+            agent.size = 0.1
+            agent.color = (89, 89, 217)
         # add tasks
         self.tasks = [Task(buyer=Buyer(), merchant=Merchant()) for _ in range(args.num_tasks)]
         for i, task in enumerate(self.tasks):
-            task.name = 'task %d' % i
+            task.name = '%d' % i
             task.buyer.name = 'buyer %d' % i
             task.buyer.collide = False
             task.buyer.movable = False
-            task.buyer.color = (1.0, 0.8, 0.6)
+            task.buyer.color = (255, 204, 153)
             task.merchant.name = 'merchant %d' % i
             task.merchant.collide = False
             task.merchant.movable = False
-            task.merchant.color = (0.6, 0.6, 1.0)
+            task.merchant.color = (153, 153, 255)
         # position dimensionality
         self.dim_p = 2
         # simulation timestep
@@ -37,7 +42,9 @@ class Scenario:
         self.contact_margin = 1e-3
         # global property
         self.collaborative = True
-        self.size = 500
+        self.range_p = (-5, +5)
+        # the size of scenario (for rendering)
+        self.size = (800, 800)
         # make initial conditions
         self.reset()
 
@@ -48,32 +55,75 @@ class Scenario:
     def reset(self):
         # random properties for agents
         for i, agent in enumerate(self.agents):
-            agent.state.p_pos = np.random.uniform(-1, +1, self.dim_p)
+            agent.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
             agent.state.p_vel = np.zeros(self.dim_p)
+            agent.tasks = []
         # random properties for landmarks
         for i, task in enumerate(self.tasks):
+            task.agent = None
             buyer = task.buyer
-            buyer.state.p_pos = np.random.uniform(-1, +1, self.dim_p)
+            buyer.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
             buyer.state.p_vel = np.zeros(self.dim_p)
             buyer.occupied = False
             merchant = task.merchant
-            merchant.state.p_pos = np.random.uniform(-1, +1, self.dim_p)
+            merchant.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
             merchant.state.p_vel = np.zeros(self.dim_p)
             merchant.occupied = False
         return np.array([self.observation(agent) for agent in self.agents])
 
+    def task_assignment(self, scheme):
+        scheme = np.argmax(scheme, axis=1)
+        # print(scheme.shape, scheme)
+        for i, task in zip(scheme, self.tasks):
+            agent = self.agents[i]
+            task.agent = agent
+            agent.tasks.append(task)
+
+    def reward_meta(self):
+        rew = 0.0
+        for task in self.tasks:
+            if task.is_finished(): continue
+            m = task.merchant
+            b = task.buyer
+            a = task.agent
+            if not m.occupied:
+                rew -= np.sqrt(np.sum(np.square(a.state.p_pos - m.state.p_pos)))
+                rew -= np.sqrt(np.sum(np.square(m.state.p_pos - b.state.p_pos)))
+            else:
+                rew -= np.sqrt(np.sum(np.square(a.state.p_pos - b.state.p_pos)))
+        return rew
+
     def reward(self, agent):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
-        rew = 0
-        for task in self.tasks:
-            l = task.merchant
-            dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in self.agents]
-            rew -= min(dists)
+        rew = 0.0
+        for task in agent.tasks:
+            if task.is_finished(): continue
+            m = task.merchant
+            b = task.buyer
+            if not m.occupied:
+                rew -= np.sqrt(np.sum(np.square(agent.state.p_pos - m.state.p_pos)))
+                rew -= np.sqrt(np.sum(np.square(m.state.p_pos - b.state.p_pos)))
+                m.occupied = is_collision(agent, m)
+            else:
+                rew -= np.sqrt(np.sum(np.square(agent.state.p_pos - b.state.p_pos)))
+                b.occupied = is_collision(agent, b)
         if agent.collide:
             for a in self.agents:
-                if is_collision(a, agent):
-                    rew -= 1
+                if is_collision(a, agent): rew -= 1.0
         return rew
+
+    def observation_meta(self):
+        obs_n = []
+        for task in self.tasks:
+            p_pos_m = task.merchant.state.p_pos
+            p_pos_b = task.buyer.state.p_pos
+            entity_pos = []
+            for agent in self.agents:
+                entity_pos.append(p_pos_m - agent.state.p_pos)
+                entity_pos.append(p_pos_b - agent.state.p_pos)
+            obs = np.concatenate([p_pos_m, p_pos_b] + entity_pos)
+            obs_n.append(obs)
+        return np.array(obs_n)
 
     def observation(self, agent):
         # get positions of all entities in this agent's reference frame
@@ -97,10 +147,9 @@ class Scenario:
         return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos)
 
     def done(self, agent):
-        for task in self.tasks:
-            if task.agent != agent:
-                continue
-            return task.is_finished()
+        for task in agent.tasks:
+            if not task.is_finished():
+                return False
         return True
 
     # update state of the world
@@ -119,7 +168,9 @@ class Scenario:
             obs_n.append(self.observation(agent))
             reward_n.append(self.reward(agent))
             done_n.append(self.done(agent))
-        return np.array(obs_n), reward_n, done_n, {}
+        reward_beta = self.reward_meta()
+        reward_n = [sum(reward_n) for _ in self.agents]
+        return np.array(obs_n), (reward_n, reward_beta), done_n, {}
 
     # gather agent action forces
     def apply_action_force(self, p_force):

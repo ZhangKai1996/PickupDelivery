@@ -11,18 +11,27 @@ from algo.visual import net_visual
 
 
 class HieTrainer:
-    def __init__(self, dim_obs, dim_act, args, folder=None):
-        self.args = args
+    def __init__(self, env, num_tasks, num_agents, folder=None, **kwargs):
         # Construct meta-controller and controller
-        self.meta_controller = MetaController(dim_obs, args)
-        self.controller = Controller(dim_obs, dim_act, args)
+        self.meta_controller = MetaController(
+            num_tasks,
+            env.obs_space_meta.shape,
+            env.act_space_meta.n,
+            **kwargs
+        )
+        self.controller = Controller(
+            num_agents,
+            env.obs_space_ctrl.shape,
+            env.act_space_ctrl.n,
+            **kwargs
+        )
         # Record the data of meta-controller and controller during training
         self.meta_c_losses, self.meta_a_losses = [], []
         self.ctrl_c_losses, self.ctrl_a_losses = [], []
         # Build the save path of file, such as graph, log and parameters
-        self.__addiction(args, folder=folder)
+        self.__addiction(folder=folder)
 
-    def __addiction(self, args, folder):
+    def __addiction(self, folder):
         self.writer = None
         if folder is None:
             return
@@ -32,7 +41,7 @@ class HieTrainer:
             self.writer = SummaryWriter(self.path['log_path'])
 
         if self.path['graph_path'] is not None:
-            print('Draw the net of Actor and Critic in Controller!')
+            print('>>> Draw the net of Actor and Critic in Controller!')
             prefix = 'ctrl'
             net_visual(
                 dim_input=[self.controller.dim(label='actor')[0], ],
@@ -52,7 +61,7 @@ class HieTrainer:
                 format='png',
                 cleanup=True
             )
-            print('Draw the net of Actor and Critic in Meta-Controller!')
+            print('>>> Draw the net of Actor and Critic in Meta-Controller!')
             prefix = 'meta'
             net_visual(
                 dim_input=[self.meta_controller.dim(label='actor')[0], ],
@@ -74,10 +83,7 @@ class HieTrainer:
             )
             print()
 
-    def get_intrinsic_reward(self, goal, state):
-        return 1.0 if goal == state else 0.0
-
-    def select_goal(self, state, t):
+    def select_scheme(self, state, t):
         return self.meta_controller.act(state, t)
 
     def select_action(self, joint_state_goal, t):
@@ -93,6 +99,9 @@ class HieTrainer:
 
     def update_controller(self, t):
         c_loss, a_loss = self.controller.update(t)
+        if c_loss is None or a_loss is None:
+            return
+
         self.ctrl_c_losses.append(c_loss)
         self.ctrl_a_losses.append(a_loss)
         if t % 100 == 0:
@@ -114,11 +123,13 @@ class HieTrainer:
 
     def update_meta_controller(self, t):
         c_loss, a_loss = self.meta_controller.update(t)
+        if c_loss is None or a_loss is None:
+            return
+
         self.meta_c_losses.append(c_loss)
         self.meta_a_losses.append(a_loss)
         if t % 100 == 0:
             prefix = 'meta'
-            # Record and visual the loss value of Actor and Critic
             mean_c_loss = np.mean(self.meta_c_losses, axis=0)
             self.scalars(
                 key=prefix+'_critic_loss',
