@@ -7,7 +7,7 @@ from train import parse_args, make_exp_id
 def test(env, trainer, max_episode_len):
     rew_stats = []
     ctrl_step = 0
-    for episode in range(1, 10+1):
+    for episode in range(1, 100+1):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
         scheme = trainer.select_scheme(obs_n_meta, episode)
@@ -22,19 +22,21 @@ def test(env, trainer, max_episode_len):
             # Step the env and return outputs
             next_obs_n, (rew_n, rew_beta), done_n, _ = env.step(act_n)
             done = all(done_n)
-            env.render(show=True)
-
-            rew_sum[0] += sum(rew_n)
+            terminal = done or episode_step >= max_episode_len
+            env.render(
+                mode='Episode:{}, Step:{}'.format(episode, episode_step),
+                clear=terminal,
+                show=True
+            )
+            rew_sum[0] += min(rew_n)
             rew_sum[-1] += rew_beta
             obs_n = next_obs_n
-            if done or episode_step > max_episode_len:
+            if terminal:
                 break
-        # Store experience for meta-controller
-        next_obs_n_beta = env.observation_meta()
         rew_stats.append(rew_sum)
-        if episode % 10 == 0:
+        if episode % 100 == 0:
             mean_rew = np.mean(rew_stats, axis=1)
-            print('Episode:{:>4d},Step:{:>6d},Rew(ctrl):{:>+6.2f},Rew(meta):{:>+6.2f}'.format(
+            print('Episode:{:>4d}, Step:{:>6d},Rew(ctrl):{:>+6.2f},Rew(meta):{:>+6.2f}'.format(
                 episode, ctrl_step, mean_rew[0], mean_rew[1]))
             rew_stats = []
 

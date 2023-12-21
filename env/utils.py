@@ -21,7 +21,7 @@ def which_figure(min_v=1, max_v=4, p=0.8):
 
 def distance(p1, p2):
     delta_x = math.pow(p2[0] - p1[0], 2)
-    delta_y = math.pow(p2[1] - p1[0], 2)
+    delta_y = math.pow(p2[1] - p1[1], 2)
     # print('utils', p1, p2, delta_x, delta_y)
     return math.sqrt(delta_x + delta_y)
 

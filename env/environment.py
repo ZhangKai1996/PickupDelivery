@@ -9,7 +9,6 @@ from env.rendering import CVRender
 class CityEnv(gym.Env):
     def __init__(self, args):
         scenario = Scenario(args)
-
         # environment parameters
         self.discrete_action_space = True
         # if true, action is a number 0...N, otherwise action is a one-hot N-dimensional vector
@@ -19,7 +18,6 @@ class CityEnv(gym.Env):
         # if true, every agent has the same reward
         self.shared_reward = scenario.collaborative if hasattr(self, 'collaborative') else False
         self.time = 0
-
         # configure spaces
         if self.discrete_action_space:
             self.act_space_ctrl = spaces.Discrete(scenario.dim_p * 2 + 1)
@@ -82,14 +80,15 @@ class CityEnv(gym.Env):
     def step(self, action_n):
         # set action for each agent
         for i, agent in enumerate(self.scenario.agents):
+            agent.update()
             self._set_action(action_n[i], agent)
         # advance scenario state
         return self.scenario.step()
 
-    def render(self, mode='human', show=False):
+    def render(self, **kwargs):
         if self.cv_render is None:
             self.cv_render = CVRender(self)
-        self.cv_render.draw(show=show)
+        self.cv_render.draw(**kwargs)
 
     def close(self):
         if self.cv_render is not None:

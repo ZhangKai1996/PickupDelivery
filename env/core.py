@@ -1,4 +1,5 @@
 from typing import Dict, Tuple, List
+from copy import deepcopy
 
 
 # physical/external base state of all entities
@@ -9,10 +10,15 @@ class EntityState(object):
         # physical velocity
         self.p_vel = None
 
+    def set(self, other):
+        self.p_pos = deepcopy(other.p_pos)
+        self.p_vel = deepcopy(other.p_vel)
+
 
 # properties and state of physical world entity
 class Entity(object):
-    def __init__(self, name='', size=0.050, movable=False, collide=True, color=(0.0, 0.0, 0.0)):
+    def __init__(self, name='', size=0.15, movable=False, collide=True,
+                 color=(0.0, 0.0, 0.0)):
         # name
         self.name = name
         # properties:
@@ -30,6 +36,7 @@ class Entity(object):
         self.accel = None
         # state
         self.state = EntityState()
+        self.last_state= EntityState()
         # mass
         self.initial_mass = 1.0
 
@@ -65,6 +72,8 @@ class Agent(Entity):
         # tasks
         self.tasks = []
 
+    def update(self):
+        self.last_state.set(other=self.state)
 
 class Rider(Entity):
     name: str
@@ -89,38 +98,6 @@ class Rider(Entity):
             self.position[0], self.position[1],
             self.velocity[0], self.velocity[1]
         )
-
-    def execute_action(self, action: list, size: int, duration=1.0):
-        if self.is_collision:
-            return
-
-        old_pos = self.position[:]
-        new_pos = (old_pos[0]+action[0]*duration, old_pos[1]+action[1]*duration)
-        self.velocity = tuple(action)
-        # print(old_pos, action, new_pos)
-        if size > new_pos[0] >= 0 and size > new_pos[1] >= 0:
-            self.position = new_pos
-            self.distance += 1
-
-        self.endurance[1] -= 1
-        self.last_pos = old_pos
-
-    def detect(self, obj):
-        if isinstance(obj, Drone):
-            dist = distance(self.position, obj.position)
-            if dist <= self.radius+obj.radius:
-                self.is_collision = True
-                self.state = 'Collision_A'
-                obj.is_collision = True
-                obj.state = 'Collision_A'
-            return
-
-        if isinstance(obj, set) or isinstance(obj, list):
-            for wall in obj:
-                if is_overlap(self.position, wall, delta=(self.radius, self.radius)):
-                    self.is_collision = True
-                    self.state = 'Collision_O'
-                    break
 
 
 class Task:

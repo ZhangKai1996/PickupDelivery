@@ -5,7 +5,6 @@ from env.utils import distance
 
 
 def is_collision(obj1, obj2):
-    # print(obj1.state.p_pos, obj2.state.p_pos, distance(obj1.state.p_pos, obj2.state.p_pos), (obj1.size + obj2.size))
     return distance(obj1.state.p_pos, obj2.state.p_pos) <= (obj1.size + obj2.size)
 
 
@@ -17,10 +16,11 @@ class Scenario:
             agent.name = 'agent %d'%i
             agent.collide = True,
             agent.movable = True
-            agent.size = 0.1
+            agent.size = 0.2
             agent.color = (89, 89, 217)
         # add tasks
-        self.tasks = [Task(buyer=Buyer(), merchant=Merchant()) for _ in range(args.num_tasks)]
+        self.tasks = [Task(buyer=Buyer(), merchant=Merchant())
+                      for _ in range(args.num_tasks)]
         for i, task in enumerate(self.tasks):
             task.name = '%d' % i
             task.buyer.name = 'buyer %d' % i
@@ -42,7 +42,7 @@ class Scenario:
         self.contact_margin = 1e-3
         # global property
         self.collaborative = True
-        self.range_p = (-5, +5)
+        self.range_p = (-5.0, +5.0)
         # the size of scenario (for rendering)
         self.size = (800, 800)
         # make initial conditions
@@ -57,6 +57,7 @@ class Scenario:
         for i, agent in enumerate(self.agents):
             agent.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
             agent.state.p_vel = np.zeros(self.dim_p)
+            agent.last_state.set(other=agent.state)
             agent.tasks = []
         # random properties for landmarks
         for i, task in enumerate(self.tasks):
