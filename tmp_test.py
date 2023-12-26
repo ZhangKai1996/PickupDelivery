@@ -1,13 +1,15 @@
+import time
+
 import numpy as np
 
 from env.environment import CityEnv
 from algo.framework import HieTrainer
-from train import parse_args, make_exp_id
+from tmp import parse_args, make_exp_id
 
 def test(env, trainer, max_episode_len):
     step_stats, rew_stats, sr_stats = [], [], []
     ctrl_step = 0
-    for episode in range(1, 10+1):
+    for episode in range(1, 1000+1):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
         scheme = trainer.select_scheme(obs_n_meta, episode)
@@ -28,13 +30,14 @@ def test(env, trainer, max_episode_len):
                 clear=terminal,
                 show=True
             )
+            time.sleep(0.1)
             rew_sum += sum(rew_n)
             obs_n = next_obs_n
             if terminal:
                 break
         rew_stats.append(rew_sum)
         sr_stats.append(int(done))
-        step_stats.append(ctrl_step)
+        step_stats.append(episode_step)
     print('Step:{:>6.2f},Rew:{:>+6.2f},SR:{:>4.2f}'.format(
         np.mean(step_stats), np.mean(rew_stats), np.mean(sr_stats))
     )
@@ -51,6 +54,7 @@ def main():
         num_tasks=args.num_tasks,
         num_agents=args.num_agents,
         folder=make_exp_id(args),
+        test=True,
         tau=args.tau,
         a_lr=args.a_lr,
         c_lr=args.c_lr,

@@ -31,12 +31,9 @@ class Actor(nn.Module):
         self.FC3 = nn.Linear(128, dim_act)
 
     def forward(self, obs_n):
-        """
-        obs_n.shape = (batch_size, dim_obs)
-        """
         out = F.relu(self.FC1(obs_n))
         out = F.relu(self.FC2(out))
-        out = th.tanh(self.FC3(out))
+        out = F.softmax(self.FC3(out))
         return out
 
 

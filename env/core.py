@@ -17,7 +17,7 @@ class EntityState(object):
 
 # properties and state of physical world entity
 class Entity(object):
-    def __init__(self, name='', size=0.15, movable=False, collide=True,
+    def __init__(self, name='', size=0.05, movable=False, collide=True,
                  color=(0.0, 0.0, 0.0)):
         # name
         self.name = name
@@ -74,6 +74,7 @@ class Agent(Entity):
 
     def update(self):
         self.last_state.set(other=self.state)
+
 
 class Rider(Entity):
     name: str

@@ -11,7 +11,7 @@ from algo.visual import net_visual
 
 
 class HieTrainer:
-    def __init__(self, env, num_tasks, num_agents, folder=None, **kwargs):
+    def __init__(self, env, num_tasks, num_agents, folder=None, test=False, **kwargs):
         # Construct meta-controller and controller
         self.meta_controller = MetaController(
             num_tasks,
@@ -29,14 +29,17 @@ class HieTrainer:
         self.meta_c_losses, self.meta_a_losses = [], []
         self.ctrl_c_losses, self.ctrl_a_losses = [], []
         # Build the save path of file, such as graph, log and parameters
-        self.__addiction(folder=folder)
+        self.__addiction(folder=folder, test=test)
 
-    def __addiction(self, folder):
+    def __addiction(self, folder, test):
         self.writer = None
         if folder is None:
             return
 
         self.path = get_folder(folder, has_graph=True, has_log=True, allow_exist=True)
+        if test:
+            return
+
         if self.path['log_path'] is not None:
             self.writer = SummaryWriter(self.path['log_path'])
 
@@ -86,8 +89,8 @@ class HieTrainer:
     def select_scheme(self, state, t):
         return self.meta_controller.act(state, t)
 
-    def select_action(self, joint_state_goal, t):
-        return self.controller.act(joint_state_goal, t)
+    def select_action(self, state, t):
+        return self.controller.act(state, t)
 
     def add(self, *args, label='ctrl'):
         if label == 'ctrl':

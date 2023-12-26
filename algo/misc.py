@@ -45,8 +45,7 @@ def get_folder(folder, root='trained', has_log=False, has_graph=False, has_model
 
 def soft_update(target, source, t):
     for target_param, source_param in zip(target.parameters(), source.parameters()):
-        target_param.data.copy_(
-            (1 - t) * target_param.data + t * source_param.data)
+        target_param.data.copy_((1 - t) * target_param.data + t * source_param.data)
 
 
 def hard_update(target, source):

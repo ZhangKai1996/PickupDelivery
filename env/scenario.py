@@ -16,8 +16,8 @@ class Scenario:
             agent.name = 'agent %d'%i
             agent.collide = True,
             agent.movable = True
-            agent.size = 0.2
-            agent.color = (89, 89, 217)
+            agent.size = 0.10
+            agent.color = (255, 0, 255)
         # add tasks
         self.tasks = [Task(buyer=Buyer(), merchant=Merchant())
                       for _ in range(args.num_tasks)]
@@ -42,7 +42,7 @@ class Scenario:
         self.contact_margin = 1e-3
         # global property
         self.collaborative = True
-        self.range_p = (-5.0, +5.0)
+        self.range_p = (-1.0, +1.0)
         # the size of scenario (for rendering)
         self.size = (800, 800)
         # make initial conditions
@@ -80,34 +80,16 @@ class Scenario:
             task.agent = agent
             agent.tasks.append(task)
 
-    def reward_meta(self):
-        rew = 0.0
-        for task in self.tasks:
-            if task.is_finished(): continue
-            m = task.merchant
-            b = task.buyer
-            a = task.agent
-            if not m.occupied:
-                rew -= np.sqrt(np.sum(np.square(a.state.p_pos - m.state.p_pos)))
-                rew -= np.sqrt(np.sum(np.square(m.state.p_pos - b.state.p_pos)))
-            else:
-                rew -= np.sqrt(np.sum(np.square(a.state.p_pos - b.state.p_pos)))
-        return rew
-
     def reward(self, agent):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
-        rew = 0.0
+        rew = distance(agent.state.p_pos, agent.last_state.p_pos)
         for task in agent.tasks:
-            if task.is_finished(): continue
-            m = task.merchant
-            b = task.buyer
-            if not m.occupied:
-                rew -= np.sqrt(np.sum(np.square(agent.state.p_pos - m.state.p_pos)))
-                rew -= np.sqrt(np.sum(np.square(m.state.p_pos - b.state.p_pos)))
-                m.occupied = is_collision(agent, m)
-            else:
-                rew -= np.sqrt(np.sum(np.square(agent.state.p_pos - b.state.p_pos)))
-                b.occupied = is_collision(agent, b)
+            l = task.merchant
+            if l.occupied: continue
+            if is_collision(l, agent):
+                l.occupied = True
+                rew = 10.0
+                break
         if agent.collide:
             for a in self.agents:
                 if is_collision(a, agent): rew -= 1.0
@@ -117,12 +99,10 @@ class Scenario:
         obs_n = []
         for task in self.tasks:
             p_pos_m = task.merchant.state.p_pos
-            p_pos_b = task.buyer.state.p_pos
             entity_pos = []
             for agent in self.agents:
                 entity_pos.append(p_pos_m - agent.state.p_pos)
-                entity_pos.append(p_pos_b - agent.state.p_pos)
-            obs = np.concatenate([p_pos_m, p_pos_b] + entity_pos)
+            obs = np.concatenate([p_pos_m, ] + entity_pos)
             obs_n.append(obs)
         return np.array(obs_n)
 
@@ -130,16 +110,15 @@ class Scenario:
         # get positions of all entities in this agent's reference frame
         entity_pos = []
         for task in self.tasks:  # world.entities:
-            merchant = task.merchant
-            if merchant.occupied:
+            if task not in agent.tasks:
+                entity_pos.append(np.zeros(self.dim_p))
+                continue
+
+            m = task.merchant
+            if m.occupied:
                 entity_pos.append(np.zeros(self.dim_p))
             else:
-                entity_pos.append(merchant.state.p_pos - agent.state.p_pos)
-            buyer = task.buyer
-            if buyer.occupied:
-                entity_pos.append(np.zeros(self.dim_p))
-            else:
-                entity_pos.append(buyer.state.p_pos - agent.state.p_pos)
+                entity_pos.append(m.state.p_pos - agent.state.p_pos)
         # communication of all other agents
         other_pos = []
         for other in self.agents:
@@ -147,9 +126,15 @@ class Scenario:
             other_pos.append(other.state.p_pos - agent.state.p_pos)
         return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos)
 
+    # def done(self, agent):
+    #     for task in agent.tasks:
+    #         if not task.is_finished():
+    #             return False
+    #     return True
+
     def done(self, agent):
         for task in agent.tasks:
-            if not task.is_finished():
+            if not task.merchant.occupied:
                 return False
         return True
 
@@ -169,9 +154,8 @@ class Scenario:
             obs_n.append(self.observation(agent))
             reward_n.append(self.reward(agent))
             done_n.append(self.done(agent))
-        reward_beta = self.reward_meta()
         reward_n = [sum(reward_n) for _ in self.agents]
-        return np.array(obs_n), (reward_n, reward_beta), done_n, {}
+        return np.array(obs_n), reward_n, done_n, {}
 
     # gather agent action forces
     def apply_action_force(self, p_force):
