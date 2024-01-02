@@ -77,7 +77,7 @@ class CVRender:
             pos = self.transform(pos=agent.state.p_pos)
             radius = int(agent.size / delta * self.width)
             cv2.circle(base_img, pos, radius, agent.color, thickness=-1)
-            info = [task.name for task in agent.tasks]
+            info = [task.name for task in agent.tasks if not task.merchant.occupied]
             if len(info) > 0:
                 cv2.putText(
                     base_img, ','.join(info),

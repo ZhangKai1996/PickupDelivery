@@ -17,7 +17,6 @@ class CityEnv(gym.Env):
         self.force_discrete_action = scenario.discrete_action if hasattr(scenario, 'discrete_action') else False
         # if true, every agent has the same reward
         self.shared_reward = scenario.collaborative if hasattr(self, 'collaborative') else False
-        self.time = 0
         # configure spaces
         if self.discrete_action_space:
             self.act_space_ctrl = spaces.Discrete(scenario.dim_p * 2 + 1)
@@ -48,34 +47,21 @@ class CityEnv(gym.Env):
 
     def _set_action(self, action, agent):
         agent.action = np.zeros(self.scenario.dim_p)
-        action = [action]
-
         if agent.movable:
             # physical action
-            if self.discrete_action_input:
-                agent.action = np.zeros(self.scenario.dim_p)
-                # process discrete action
-                if action[0] == 1: agent.action[0] = -1.0
-                if action[0] == 2: agent.action[0] = +1.0
-                if action[0] == 3: agent.action[1] = -1.0
-                if action[0] == 4: agent.action[1] = +1.0
+            if self.force_discrete_action:
+                d = np.argmax(action)
+                action[:] = 0.0
+                action[d] = 1.0
+            if self.discrete_action_space:
+                agent.action[0] += action[1] - action[2]
+                agent.action[1] += action[3] - action[4]
             else:
-                if self.force_discrete_action:
-                    d = np.argmax(action[0])
-                    action[0][:] = 0.0
-                    action[0][d] = 1.0
-                if self.discrete_action_space:
-                    agent.action[0] += action[0][1] - action[0][2]
-                    agent.action[1] += action[0][3] - action[0][4]
-                else:
-                    agent.action = action[0]
+                agent.action = action
             sensitivity = 5.0
             if agent.accel is not None:
                 sensitivity = agent.accel
             agent.action *= sensitivity
-            action = action[1:]
-        # make sure we used all elements of action
-        assert len(action) == 0
 
     def step(self, action_n):
         # set action for each agent

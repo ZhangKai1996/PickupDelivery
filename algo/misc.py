@@ -7,7 +7,7 @@ FloatTensor = th.FloatTensor if not th.cuda.is_available() else th.cuda.FloatTen
 ByteTensor = th.ByteTensor if not th.cuda.is_available() else th.cuda.ByteTensor
 
 
-def get_folder(folder, root='trained', has_log=False, has_graph=False, has_model=True, allow_exist=False):
+def get_folder(folder, root='trained', has_log=True, has_graph=True, has_model=True, makedir=True, allow_exist=False):
     """
     数据记录（计算图、logs和网络参数）的保存文件路径
     """
@@ -18,21 +18,21 @@ def get_folder(folder, root='trained', has_log=False, has_graph=False, has_model
 
     if has_log:
         log_path = os.path.join(folder, 'logs/')
-        if not os.path.exists(log_path):
+        if not os.path.exists(log_path) and makedir:
             os.makedirs(log_path)
     else:
         log_path = None
 
     if has_graph:
         graph_path = os.path.join(folder, 'graph/')
-        if not os.path.exists(graph_path):
+        if not os.path.exists(graph_path) and makedir:
             os.makedirs(graph_path)
     else:
         graph_path = None
 
     if has_model:
         model_path = os.path.join(folder, 'model/')
-        if not os.path.exists(model_path):
+        if not os.path.exists(model_path) and makedir:
             os.makedirs(model_path)
     else:
         model_path = None

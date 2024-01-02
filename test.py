@@ -1,3 +1,5 @@
+import time
+from tqdm import tqdm
 import numpy as np
 
 from env.environment import CityEnv
@@ -7,10 +9,10 @@ from train import parse_args, make_exp_id
 def test(env, trainer, max_episode_len):
     step_stats, rew_stats, sr_stats = [], [], []
     ctrl_step = 0
-    for episode in range(1, 10+1):
+    for episode in tqdm(range(1, 1000+1), desc='Testing'):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
-        scheme = trainer.select_scheme(obs_n_meta, episode)
+        scheme = trainer.select_scheme(obs_n_meta, episode, test=True)
         env.task_assignment(scheme)
 
         episode_step = 0
@@ -18,7 +20,7 @@ def test(env, trainer, max_episode_len):
         while True:
             ctrl_step += 1
             episode_step += 1
-            act_n = trainer.select_action(obs_n, ctrl_step)
+            act_n = trainer.select_action(obs_n, ctrl_step, test=True)
             # Step the env and return outputs
             next_obs_n, rew_n, done_n, _ = env.step(act_n)
             done = all(done_n)
@@ -26,15 +28,16 @@ def test(env, trainer, max_episode_len):
             env.render(
                 mode='Episode:{}, Step:{}'.format(episode, episode_step),
                 clear=terminal,
-                show=True
+                # show=True
             )
-            rew_sum += sum(rew_n)
+            # time.sleep(0.1)
+            rew_sum += min(rew_n)
             obs_n = next_obs_n
             if terminal:
                 break
         rew_stats.append(rew_sum)
         sr_stats.append(int(done))
-        step_stats.append(ctrl_step)
+        step_stats.append(episode_step)
     print('Step:{:>6.2f},Rew:{:>+6.2f},SR:{:>4.2f}'.format(
         np.mean(step_stats), np.mean(rew_stats), np.mean(sr_stats))
     )
@@ -51,6 +54,7 @@ def main():
         num_tasks=args.num_tasks,
         num_agents=args.num_agents,
         folder=make_exp_id(args),
+        test=True,
         tau=args.tau,
         a_lr=args.a_lr,
         c_lr=args.c_lr,

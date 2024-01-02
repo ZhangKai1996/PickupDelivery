@@ -59,8 +59,8 @@ class Controller(Trainer):
     def add_experience(self, obs_n, act_n, next_obs_n, rew_n, done_n):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
-    def act(self, obs_n, t):
-        decay = np.random.random() <= self.schedule.value(t)
+    def act(self, obs_n, t, test=False):
+        decay = np.random.random() <= self.schedule.value(t) and not test
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):
@@ -75,9 +75,6 @@ class Controller(Trainer):
     def update(self, t):
         if t <= self.kwargs['learning_start']:
             return None, None
-
-        # if t % 100 != 0:
-        #     return None, None
 
         batch_size = self.kwargs['batch_size']
         gamma = self.kwargs['gamma']
@@ -133,9 +130,9 @@ class MetaController(Trainer):
         self.actors_optimizer, self.critics_optimizer = [], []
         for i in range(n_agents):
             # Actor and target actor
-            actor = Actor(dim_obs, dim_act).cuda()
+            actor = Actor(dim_obs, dim_act, activate='softmax').cuda()
             self.actors.append(actor)
-            actor_target = Actor(dim_obs, dim_act).cuda()
+            actor_target = Actor(dim_obs, dim_act, activate='softmax').cuda()
             actor_target.load_state_dict(actor.state_dict())
             self.actors_target.append(actor_target)
             self.actors_optimizer.append(Adam(actor.parameters(), lr=kwargs['a_lr']))
@@ -164,8 +161,8 @@ class MetaController(Trainer):
         done_n = np.array([done, ] * self.n_agents)
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
-    def act(self, obs_n, t, var_decay=False):
-        decay = np.random.random() > self.schedule.value(t)
+    def act(self, obs_n, t, test=False):
+        decay = np.random.random() > self.schedule.value(t) and not test
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):
@@ -173,16 +170,13 @@ class MetaController(Trainer):
             act = self.actors[i](obs).squeeze()
             if decay:
                 act += th.from_numpy(np.random.randn(self.n_actions)).type(FloatTensor)
-                act = th.clamp(act, -1.0, 1.0)
+                act = th.softmax(act, dim=0)
             act_n[i, :] = act
         return act_n.data.cpu().numpy()
 
     def update(self, t):
         if t <= self.kwargs['learning_start']:
             return None, None
-
-        # if t % 100 != 0:
-        #     return None, None
 
         batch_size = self.kwargs['batch_size']
         gamma = self.kwargs['gamma']

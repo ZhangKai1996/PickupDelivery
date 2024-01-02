@@ -36,9 +36,8 @@ class HieTrainer:
         if folder is None:
             return
 
-        self.path = get_folder(folder, has_graph=True, has_log=True, allow_exist=True)
-        if test:
-            return
+        self.path = get_folder(folder, makedir=(not test), allow_exist=True)
+        if test:return
 
         if self.path['log_path'] is not None:
             self.writer = SummaryWriter(self.path['log_path'])
@@ -86,11 +85,11 @@ class HieTrainer:
             )
             print()
 
-    def select_scheme(self, state, t):
-        return self.meta_controller.act(state, t)
+    def select_scheme(self, state, t, **kwargs):
+        return self.meta_controller.act(state, t, **kwargs)
 
-    def select_action(self, state, t):
-        return self.controller.act(state, t)
+    def select_action(self, state, t, **kwargs):
+        return self.controller.act(state, t, **kwargs)
 
     def add(self, *args, label='ctrl'):
         if label == 'ctrl':

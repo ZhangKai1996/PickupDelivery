@@ -126,16 +126,10 @@ class Scenario:
             other_pos.append(other.state.p_pos - agent.state.p_pos)
         return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos)
 
-    # def done(self, agent):
-    #     for task in agent.tasks:
-    #         if not task.is_finished():
-    #             return False
-    #     return True
-
     def done(self, agent):
-        for task in agent.tasks:
-            if not task.merchant.occupied:
-                return False
+        for task in self.tasks:
+            if task not in agent.tasks: continue
+            if not task.merchant.occupied: return False
         return True
 
     # update state of the world
