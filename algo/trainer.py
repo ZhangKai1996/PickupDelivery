@@ -22,7 +22,7 @@ class Controller(Trainer):
         self.dim_obs = dim_obs
 
         self.kwargs = kwargs
-        self.schedule = LinearSchedule(200000, 0.1, 1)
+        self.schedule = LinearSchedule(2000000, 0.1, 1)
         self.memory = ReplayMemory(kwargs['memory_length'])
 
         self.actors, self.critics = [], []
@@ -30,20 +30,20 @@ class Controller(Trainer):
         self.actors_optimizer, self.critics_optimizer = [], []
         for _ in range(self.n_agents):
             # Actor and target actor
-            actor = Actor(dim_obs, dim_act).cuda()
+            actor = Actor(dim_obs, dim_act)
             self.actors.append(actor)
-            actor_target = Actor(dim_obs, dim_act).cuda()
+            actor_target = Actor(dim_obs, dim_act)
             actor_target.load_state_dict(actor.state_dict())
             self.actors_target.append(actor_target)
             self.actors_optimizer.append(Adam(actor.parameters(), lr=kwargs['a_lr']))
             # Critic and target critic
-            critic = Critic(self.n_agents, dim_obs, dim_act).cuda()
+            critic = Critic(self.n_agents, dim_obs, dim_act)
             self.critics.append(critic)
-            critic_target = Critic(self.n_agents, dim_obs, dim_act).cuda()
+            critic_target = Critic(self.n_agents, dim_obs, dim_act)
             critic_target.load_state_dict(critic.state_dict())
             self.critics_target.append(critic_target)
             self.critics_optimizer.append(Adam(critic.parameters(), lr=kwargs['c_lr']))
-        self.mse_loss = nn.MSELoss().cuda()
+        self.mse_loss = nn.MSELoss()
 
     def dim(self, label='actor', batch_size=1):
         if label == 'actor':
@@ -130,20 +130,20 @@ class MetaController(Trainer):
         self.actors_optimizer, self.critics_optimizer = [], []
         for i in range(n_agents):
             # Actor and target actor
-            actor = Actor(dim_obs, dim_act, activate='softmax').cuda()
+            actor = Actor(dim_obs, dim_act, activate='softmax')
             self.actors.append(actor)
-            actor_target = Actor(dim_obs, dim_act, activate='softmax').cuda()
+            actor_target = Actor(dim_obs, dim_act, activate='softmax')
             actor_target.load_state_dict(actor.state_dict())
             self.actors_target.append(actor_target)
             self.actors_optimizer.append(Adam(actor.parameters(), lr=kwargs['a_lr']))
             # Critic and target critic
-            critic = Critic(n_agents, dim_obs, dim_act).cuda()
+            critic = Critic(n_agents, dim_obs, dim_act)
             self.critics.append(critic)
-            critic_target = Critic(n_agents, dim_obs, dim_act).cuda()
+            critic_target = Critic(n_agents, dim_obs, dim_act)
             critic_target.load_state_dict(critic.state_dict())
             self.critics_target.append(critic_target)
             self.critics_optimizer.append(Adam(critic.parameters(), lr=kwargs['c_lr']))
-        self.mse_loss = nn.MSELoss().cuda()
+        self.mse_loss = nn.MSELoss()
 
     def dim(self, label='actor', batch_size=1):
         if label == 'actor':

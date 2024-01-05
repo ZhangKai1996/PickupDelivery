@@ -1,4 +1,3 @@
-from typing import Dict, Tuple, List
 from copy import deepcopy
 
 
@@ -36,31 +35,47 @@ class Entity(object):
         self.accel = None
         # state
         self.state = EntityState()
-        self.last_state= EntityState()
+        self.last_state = EntityState()
         # mass
         self.initial_mass = 1.0
+        self.mass = 1.0
 
-    @property
-    def mass(self):
-        return self.initial_mass
+    def update(self):
+        self.last_state.set(other=self.state)
+
 
 # properties of landmark entities
 class Buyer(Entity):
-     def __init__(self, **kwargs):
+    def __init__(self, **kwargs):
         super(Buyer, self).__init__(**kwargs)
+        self.collide = False
+        self.movable = False
         self.occupied = False
+        self.size = 0.20
 
 
 class Merchant(Entity):
     def __init__(self, **kwargs):
         super(Merchant, self).__init__(**kwargs)
+        self.collide = False
+        self.movable = False
         self.occupied = False
+        self.size = 0.20
+
+
+class Barrier(Entity):
+    def __init__(self, **kwargs):
+        super(Barrier, self).__init__(**kwargs)
+        self.collide = True
+        self.movable = False
 
 
 # properties of agent entities
 class Agent(Entity):
     def __init__(self, **kwargs):
         super(Agent, self).__init__(**kwargs)
+        self.collide = True
+        self.movable = True
         # cannot observe the world
         self.o_range = 0.1
         # physical motor noise amount
@@ -71,34 +86,15 @@ class Agent(Entity):
         self.action = None
         # tasks
         self.tasks = []
+        self.payload = 10.0
 
-    def update(self):
-        self.last_state.set(other=self.state)
+    @property
+    def is_overload(self):
+        return self.mass - self.initial_mass > self.payload
 
-
-class Rider(Entity):
-    name: str
-    radius: float
-    state: str = 'Empty'  # Empty, Pickup, Delivery, Collision_O, Collision_A
-    position: Tuple[float, float]
-    velocity: Tuple[float, float] = (0.0, 0.0)
-    last_pos: Tuple[float, float]
-    distance: int = 0
-    endurance: List[int] = [60, 60]
-    tasks: Dict[str, int] = {}
-    is_collision: bool = False
-
-    def __init__(self, name='Drone'):
-        super(Rider, self).__init__()
-        self.name = name
-
-    def __str__(self):
-        return '{},{},{}, Loc: ({:>6.3f},{:>6.3f}), Vel: ({:>+5.3f},{:>+5.3f})'.format(
-            self.name, self.state,
-            int(self.is_collision),
-            self.position[0], self.position[1],
-            self.velocity[0], self.velocity[1]
-        )
+    def update_mass(self):
+        task_mass = sum([t.mass for t in self.tasks if t.is_picked])
+        self.mass = self.initial_mass + task_mass
 
 
 class Task:
@@ -108,10 +104,37 @@ class Task:
         self.buyer = merchant
         self.clock = clock
         self.agent = None
+        self.status = 'Unassigned'
 
+    @property
+    def mass(self):
+        return 1.0
+
+    def assign_to(self, agent):
+        self.agent = agent
+        agent.tasks.append(self)
+        self.__update()
+
+    def __update(self):
+        if self.buyer.occupied:
+            self.status = 'Finished'
+            return
+        if self.merchant.occupied:
+            self.status = 'Pickup'
+            return
+        if self.agent is not None:
+            self.status = 'Assigned'
+            return
+        self.status = 'Unassigned'
+
+    @property
+    def is_assigned(self):
+        return self.status == 'Assigned'
+
+    @property
+    def is_picked(self):
+        return self.status == 'Pickup'
+
+    @property
     def is_finished(self):
-        return (
-            self.agent is not None
-            and self.merchant.occupied
-            and self.buyer.occupied
-        )
+        return self.status == 'Finished'

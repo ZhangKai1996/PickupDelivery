@@ -1,11 +1,20 @@
 import numpy as np
 
-from env.core import Agent, Task, Buyer, Merchant
-from env.utils import distance
+from env.core import *
+from env.utils import distance, is_overlap
+
+
+# def is_collision(obj1, obj2):
+#     return is_overlap(
+#         obj1.state.p_pos,
+#         obj2.state.p_pos,
+#         delta1=obj1.shape[1:],
+#         delta2=obj2.shape[1:]
+#     )
 
 
 def is_collision(obj1, obj2):
-    return distance(obj1.state.p_pos, obj2.state.p_pos) <= (obj1.size + obj2.size)
+    return distance(obj1.state.p_pos, obj2.state.p_pos) < obj1.size + obj2.size
 
 
 class Scenario:
@@ -13,24 +22,24 @@ class Scenario:
         # add agents
         self.agents = [Agent() for _ in range(args.num_agents)]
         for i, agent in enumerate(self.agents):
-            agent.name = 'agent %d'%i
-            agent.collide = True,
-            agent.movable = True
-            agent.size = 0.10
+            agent.name = 'agent %d' % i
             agent.color = (255, 0, 255)
+            agent.size = 0.40
         # add tasks
         self.tasks = [Task(buyer=Buyer(), merchant=Merchant())
                       for _ in range(args.num_tasks)]
         for i, task in enumerate(self.tasks):
             task.name = '%d' % i
             task.buyer.name = 'buyer %d' % i
-            task.buyer.collide = False
-            task.buyer.movable = False
             task.buyer.color = (255, 204, 153)
             task.merchant.name = 'merchant %d' % i
-            task.merchant.collide = False
-            task.merchant.movable = False
             task.merchant.color = (153, 153, 255)
+        # add barriers
+        self.barriers = [Barrier() for _ in range(32)]
+        for i, barrier in enumerate(self.barriers):
+            barrier.name = 'barrier %d'
+            barrier.size = 0.40
+            barrier.color = (0, 0, 0)
         # position dimensionality
         self.dim_p = 2
         # simulation timestep
@@ -42,25 +51,25 @@ class Scenario:
         self.contact_margin = 1e-3
         # global property
         self.collaborative = True
-        self.range_p = (-1.0, +1.0)
+        self.range_p = (-10.0, +10.0)
         # the size of scenario (for rendering)
-        self.size = (800, 800)
+        self.size = (1200, 1200)
         # make initial conditions
         self.reset()
 
     @property
     def entities(self):
-        return self.agents
+        return self.agents + self.barriers
 
     def reset(self):
         # random properties for agents
-        for i, agent in enumerate(self.agents):
+        for agent in self.agents:
             agent.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
             agent.state.p_vel = np.zeros(self.dim_p)
             agent.last_state.set(other=agent.state)
             agent.tasks = []
         # random properties for landmarks
-        for i, task in enumerate(self.tasks):
+        for task in self.tasks:
             task.agent = None
             buyer = task.buyer
             buyer.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
@@ -70,15 +79,16 @@ class Scenario:
             merchant.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
             merchant.state.p_vel = np.zeros(self.dim_p)
             merchant.occupied = False
+        # random properties for barriers
+        for i, barrier in enumerate(self.barriers):
+            barrier.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
+            barrier.state.p_vel = np.zeros(self.dim_p)
         return np.array([self.observation(agent) for agent in self.agents])
 
     def task_assignment(self, scheme):
-        scheme = np.argmax(scheme, axis=1)
-        # print(scheme.shape, scheme)
-        for i, task in zip(scheme, self.tasks):
-            agent = self.agents[i]
-            task.agent = agent
-            agent.tasks.append(task)
+        agent_id = np.argmax(scheme, axis=1)
+        for i, task in zip(agent_id, self.tasks):
+            task.assign_to(self.agents[i])
 
     def reward(self, agent):
         # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
@@ -113,7 +123,6 @@ class Scenario:
             if task not in agent.tasks:
                 entity_pos.append(np.zeros(self.dim_p))
                 continue
-
             m = task.merchant
             if m.occupied:
                 entity_pos.append(np.zeros(self.dim_p))
@@ -145,6 +154,7 @@ class Scenario:
 
         obs_n, reward_n, done_n = [], [], []
         for agent in self.agents:
+            agent.update_mass()
             obs_n.append(self.observation(agent))
             reward_n.append(self.reward(agent))
             done_n.append(self.done(agent))
@@ -154,10 +164,13 @@ class Scenario:
     # gather agent action forces
     def apply_action_force(self, p_force):
         # set applied forces
-        for i, agent in enumerate(self.agents):
-            if agent.movable:
-                noise = np.random.randn(*agent.action.shape) * agent.u_noise if agent.u_noise else 0.0
-                p_force[i] = agent.action + noise
+        for i, entity in enumerate(self.entities):
+            if not hasattr(entity, 'action'):
+                continue
+            if entity.movable:
+                noise = np.random.randn(*entity.action.shape)
+                noise = noise * entity.u_noise if entity.u_noise else 0.0
+                p_force[i] = entity.action + noise
         return p_force
 
     # gather physical forces acting on entities

@@ -6,10 +6,11 @@ from env.environment import CityEnv
 from algo.framework import HieTrainer
 from train import parse_args, make_exp_id
 
+
 def test(env, trainer, max_episode_len):
     step_stats, rew_stats, sr_stats = [], [], []
     ctrl_step = 0
-    for episode in tqdm(range(1, 1000+1), desc='Testing'):
+    for episode in tqdm(range(1, 1000 + 1), desc='Testing'):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
         scheme = trainer.select_scheme(obs_n_meta, episode, test=True)
@@ -28,7 +29,7 @@ def test(env, trainer, max_episode_len):
             env.render(
                 mode='Episode:{}, Step:{}'.format(episode, episode_step),
                 clear=terminal,
-                # show=True
+                show=True
             )
             # time.sleep(0.1)
             rew_sum += min(rew_n)
@@ -61,7 +62,7 @@ def main():
         gamma=args.gamma,
         batch_size=args.batch_size,
         learning_start=args.learning_start,
-        memory_length = args.memory_length,
+        memory_length=args.memory_length,
     )
     trainer.load_model()
     # Train with interaction.

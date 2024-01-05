@@ -9,7 +9,6 @@ from algo.trainer import MetaController, Controller
 from algo.visual import net_visual
 
 
-
 class HieTrainer:
     def __init__(self, env, num_tasks, num_agents, folder=None, test=False, **kwargs):
         # Construct meta-controller and controller
@@ -37,7 +36,7 @@ class HieTrainer:
             return
 
         self.path = get_folder(folder, makedir=(not test), allow_exist=True)
-        if test:return
+        if test: return
 
         if self.path['log_path'] is not None:
             self.writer = SummaryWriter(self.path['log_path'])
@@ -49,7 +48,7 @@ class HieTrainer:
                 dim_input=[self.controller.dim(label='actor')[0], ],
                 net=self.controller.actors[0],
                 d_type=FloatTensor,
-                filename=prefix+'_actor',
+                filename=prefix + '_actor',
                 directory=self.path['graph_path'],
                 format='png',
                 cleanup=True
@@ -58,7 +57,7 @@ class HieTrainer:
                 dim_input=self.controller.dim(label='critic'),
                 net=self.controller.critics[0],
                 d_type=FloatTensor,
-                filename=prefix+'_critic',
+                filename=prefix + '_critic',
                 directory=self.path['graph_path'],
                 format='png',
                 cleanup=True
@@ -69,7 +68,7 @@ class HieTrainer:
                 dim_input=[self.meta_controller.dim(label='actor')[0], ],
                 net=self.meta_controller.actors[0],
                 d_type=FloatTensor,
-                filename=prefix+'_actor',
+                filename=prefix + '_actor',
                 directory=self.path['graph_path'],
                 format='png',
                 cleanup=True
@@ -78,7 +77,7 @@ class HieTrainer:
                 dim_input=self.meta_controller.dim(label='critic'),
                 net=self.meta_controller.critics[0],
                 d_type=FloatTensor,
-                filename=prefix+'_critic',
+                filename=prefix + '_critic',
                 directory=self.path['graph_path'],
                 format='png',
                 cleanup=True
@@ -111,14 +110,14 @@ class HieTrainer:
             # Record and visual the loss value of Actor and Critic
             mean_c_loss = np.mean(self.ctrl_c_losses, axis=0)
             self.scalars(
-                key=prefix+'_critic_loss',
-                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_c_loss)},
+                key=prefix + '_critic_loss',
+                value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)},
                 episode=t
             )
             mean_a_loss = np.mean(self.ctrl_a_losses, axis=0)
             self.scalars(
-                key=prefix+'_actor_loss',
-                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_a_loss)},
+                key=prefix + '_actor_loss',
+                value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)},
                 episode=t
             )
             self.ctrl_c_losses, self.ctrl_a_losses = [], []
@@ -134,14 +133,14 @@ class HieTrainer:
             prefix = 'meta'
             mean_c_loss = np.mean(self.meta_c_losses, axis=0)
             self.scalars(
-                key=prefix+'_critic_loss',
-                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_c_loss)},
+                key=prefix + '_critic_loss',
+                value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)},
                 episode=t
             )
             mean_a_loss = np.mean(self.meta_a_losses, axis=0)
             self.scalars(
-                key=prefix+'_actor_loss',
-                value={'agent_{}'.format(i+1): v for i, v in enumerate(mean_a_loss)},
+                key=prefix + '_actor_loss',
+                value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)},
                 episode=t
             )
             self.meta_c_losses, self.meta_a_losses = [], []
@@ -154,8 +153,8 @@ class HieTrainer:
             prefix = 'ctrl'
             iterator = zip(self.controller.actors, self.controller.critics)
             for i, (a, c) in enumerate(iterator):
-                a_state_dict = th.load(load_path + prefix+'_actor_{}.pth'.format(i)).state_dict()
-                c_state_dict = th.load(load_path + prefix+'_critic_{}.pth'.format(i)).state_dict()
+                a_state_dict = th.load(load_path + prefix + '_actor_{}.pth'.format(i)).state_dict()
+                c_state_dict = th.load(load_path + prefix + '_critic_{}.pth'.format(i)).state_dict()
                 a.load_state_dict(a_state_dict)
                 c.load_state_dict(c_state_dict)
                 self.controller.actors_target[i] = deepcopy(a)
@@ -163,8 +162,8 @@ class HieTrainer:
             prefix = 'meta'
             iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
             for i, (a, c) in enumerate(iterator):
-                a_state_dict = th.load(load_path + prefix+'_actor_{}.pth'.format(i)).state_dict()
-                c_state_dict = th.load(load_path + prefix+'_critic_{}.pth'.format(i)).state_dict()
+                a_state_dict = th.load(load_path + prefix + '_actor_{}.pth'.format(i)).state_dict()
+                c_state_dict = th.load(load_path + prefix + '_critic_{}.pth'.format(i)).state_dict()
                 a.load_state_dict(a_state_dict)
                 c.load_state_dict(c_state_dict)
                 self.meta_controller.actors_target[i] = deepcopy(a)

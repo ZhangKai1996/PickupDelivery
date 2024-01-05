@@ -13,7 +13,7 @@ def parse_args():
     # Environment
     parser.add_argument("--num-agents", type=int, default=5, help="number of the agent (drone or car)")
     parser.add_argument("--num-tasks", type=int, default=10, help="number of tasks (the pair of <m,b>)")
-    parser.add_argument("--max-episode-len", type=int, default=30, help="maximum episode length")
+    parser.add_argument("--max-episode-len", type=int, default=50, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=1000000, help="number of episodes")
     parser.add_argument('--memory-length', default=int(1e6), type=int, help='number of experience replay pool')
     parser.add_argument("--learning-start", type=int, default=5000, help="start updating after this number of step")
@@ -41,7 +41,7 @@ def train(env, trainer, num_episodes, max_episode_len, save_rate):
     step = 0
     start_time = time.time()
 
-    for episode in range(1, num_episodes+1):
+    for episode in range(1, num_episodes + 1):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
         scheme = trainer.select_scheme(obs_n_meta, episode)
@@ -83,13 +83,14 @@ def train(env, trainer, num_episodes, max_episode_len, save_rate):
         if episode % save_rate == 0:
             end_time = time.time()
             print('Episode:{:>6d}, Step:{:>7d}, Rew:{:>+7.2f}, SR:{:>3.2f}, Time:{:>6.3f}'.format(
-                episode, step, np.mean(rew_stats), np.mean(sr_stats), end_time-start_time))
+                episode, step, np.mean(rew_stats), np.mean(sr_stats), end_time - start_time))
             trainer.scalar(key='reward', value=np.mean(rew_stats), episode=episode)
             trainer.scalar(key='sr', value=np.mean(sr_stats), episode=episode)
             rew_stats, sr_stats = [], []
             start_time = end_time
             # Save the model every fixed several episodes.
             trainer.save_model()
+
 
 def make_exp_id(args):
     return 'exp_{}_{}_{}_{}_{}_{}_{}_{}'.format(
@@ -115,7 +116,7 @@ def main():
         gamma=args.gamma,
         batch_size=args.batch_size,
         learning_start=args.learning_start,
-        memory_length = args.memory_length,
+        memory_length=args.memory_length,
     )
     # Train with interaction.
     train(
