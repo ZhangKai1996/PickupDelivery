@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from .utils import is_collision
+
 
 # physical/external base state of all entities
 class EntityState(object):
@@ -16,8 +18,7 @@ class EntityState(object):
 
 # properties and state of physical world entity
 class Entity(object):
-    def __init__(self, name='', size=0.05, movable=False, collide=True,
-                 color=(0.0, 0.0, 0.0)):
+    def __init__(self, name='', size=0.05, movable=False, collide=True, color=(0.0, 0.0, 0.0)):
         # name
         self.name = name
         # properties:
@@ -92,6 +93,9 @@ class Agent(Entity):
     def is_overload(self):
         return self.mass - self.initial_mass > self.payload
 
+    def is_collision(self, entity):
+        return is_collision(self, entity)
+
     def update_mass(self):
         task_mass = sum([t.mass for t in self.tasks if t.is_picked])
         self.mass = self.initial_mass + task_mass
@@ -110,22 +114,13 @@ class Task:
     def mass(self):
         return 1.0
 
-    def assign_to(self, agent):
-        self.agent = agent
-        agent.tasks.append(self)
-        self.__update()
+    @property
+    def pick_pos(self):
+        return self.merchant.state.p_pos
 
-    def __update(self):
-        if self.buyer.occupied:
-            self.status = 'Finished'
-            return
-        if self.merchant.occupied:
-            self.status = 'Pickup'
-            return
-        if self.agent is not None:
-            self.status = 'Assigned'
-            return
-        self.status = 'Unassigned'
+    @property
+    def delivery_pos(self):
+        return self.buyer.state.p_pos
 
     @property
     def is_assigned(self):
@@ -138,3 +133,27 @@ class Task:
     @property
     def is_finished(self):
         return self.status == 'Finished'
+
+    def assign_to(self, agent):
+        self.agent = agent
+        agent.tasks.append(self)
+        self.update_task_status()
+
+    def check_occupied(self, agent):
+        if is_collision(self.merchant, agent):
+            self.merchant.occupied = True
+            self.update_task_status()
+            return True
+        return False
+
+    def update_task_status(self):
+        if self.buyer.occupied:
+            self.status = 'Finished'
+            return
+        if self.merchant.occupied:
+            self.status = 'Pickup'
+            return
+        if self.agent is not None:
+            self.status = 'Assigned'
+            return
+        self.status = 'Unassigned'

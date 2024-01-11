@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.optim import Adam
 
 from .memory import ReplayMemory
-from .network import Critic, Actor
+from .network import Critic, Actor, MetaActor
 from .misc import soft_update, FloatTensor, LinearSchedule
 
 
@@ -25,24 +25,16 @@ class Controller(Trainer):
         self.schedule = LinearSchedule(2000000, 0.1, 1)
         self.memory = ReplayMemory(kwargs['memory_length'])
 
-        self.actors, self.critics = [], []
-        self.actors_target, self.critics_target = [], []
-        self.actors_optimizer, self.critics_optimizer = [], []
-        for _ in range(self.n_agents):
-            # Actor and target actor
-            actor = Actor(dim_obs, dim_act)
-            self.actors.append(actor)
-            actor_target = Actor(dim_obs, dim_act)
-            actor_target.load_state_dict(actor.state_dict())
-            self.actors_target.append(actor_target)
-            self.actors_optimizer.append(Adam(actor.parameters(), lr=kwargs['a_lr']))
-            # Critic and target critic
-            critic = Critic(self.n_agents, dim_obs, dim_act)
-            self.critics.append(critic)
-            critic_target = Critic(self.n_agents, dim_obs, dim_act)
-            critic_target.load_state_dict(critic.state_dict())
-            self.critics_target.append(critic_target)
-            self.critics_optimizer.append(Adam(critic.parameters(), lr=kwargs['c_lr']))
+        # Actor and target actor
+        self.actor = Actor(dim_obs, dim_act)
+        self.actor_target = Actor(dim_obs, dim_act)
+        self.actor_target.load_state_dict(self.actor.state_dict())
+        self.actor_optimizer = Adam(self.actor.parameters(), lr=kwargs['a_lr'])
+        # Critic and target critic
+        self.critic = Critic(self.n_agents, dim_obs, dim_act)
+        self.critic_target = Critic(self.n_agents, dim_obs, dim_act)
+        self.critic_target.load_state_dict(self.critic.state_dict())
+        self.critic_optimizer = Adam(self.critic.parameters(), lr=kwargs['c_lr'])
         self.mse_loss = nn.MSELoss()
 
     def dim(self, label='actor', batch_size=1):
@@ -60,58 +52,52 @@ class Controller(Trainer):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
     def act(self, obs_n, t, test=False):
-        decay = np.random.random() <= self.schedule.value(t) and not test
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
-        act_n = th.zeros(self.n_agents, self.n_actions)
-        for i in range(self.n_agents):
-            obs = obs_n[i, :].detach().unsqueeze(0)
-            act = self.actors[i](obs).squeeze()
-            if decay:
-                act += th.from_numpy(np.random.randn(self.n_actions)).type(FloatTensor)
-                act = th.clamp(act, -1.0, 1.0)
-            act_n[i, :] = act
+        act_n = self.actor(obs_n.detach())
+        if np.random.random() < self.schedule.value(t) and not test:
+            noise = np.random.randn(self.n_agents, self.n_actions)
+            act_n += th.from_numpy(noise).type(FloatTensor)
+            act_n = th.tanh(act_n)
         return act_n.data.cpu().numpy()
 
     def update(self, t):
         if t <= self.kwargs['learning_start']:
             return None, None
 
-        batch_size = self.kwargs['batch_size']
         gamma = self.kwargs['gamma']
-        tau = self.kwargs['tau']
+
+        transitions = self.memory.sample(self.kwargs['batch_size'])
+        state_batch = th.from_numpy(transitions[0]).type(FloatTensor)
+        action_batch = th.from_numpy(transitions[1]).type(FloatTensor)
+        n_states_batch = th.from_numpy(transitions[2]).type(FloatTensor)
+        reward_batch = th.from_numpy(transitions[3]).type(FloatTensor).unsqueeze(dim=-1)
+        done_batch = th.from_numpy(transitions[4]).type(FloatTensor).unsqueeze(dim=-1)
 
         c_loss, a_loss = [], []
         for i in range(self.n_agents):
-            transitions = self.memory.sample(batch_size)
-            state_batch = th.from_numpy(transitions[0]).type(FloatTensor)
-            action_batch = th.from_numpy(transitions[1]).type(FloatTensor)
-            n_states_batch = th.from_numpy(transitions[2]).type(FloatTensor)
-            reward_batch = th.from_numpy(transitions[3]).type(FloatTensor).unsqueeze(dim=-1)
-            done_batch = th.from_numpy(transitions[4]).type(FloatTensor).unsqueeze(dim=-1)
-
-            self.critics_optimizer[i].zero_grad()
-            current_q = self.critics[i](state_batch, action_batch)
-            n_actions = [self.actors_target[i](n_states_batch[:, i, :]) for i in range(self.n_agents)]
-            n_actions = th.stack(n_actions, dim=1)
-            target_next_q = self.critics_target[i](n_states_batch, n_actions)
-            target_q = target_next_q * gamma * (1 - done_batch[:, i, :]) + reward_batch[:, i, :]
+            self.critic_optimizer.zero_grad()
+            current_q = self.critic(state_batch, action_batch)  # (32,1)
+            n_actions = self.actor_target(n_states_batch)  # (32,3,5)
+            target_next_q = self.critic_target(n_states_batch, n_actions)  # (32,1)
+            target_q = target_next_q * gamma * (1 - done_batch[:, i]) + reward_batch[:, i]
             loss_q = self.mse_loss(current_q, target_q.detach())
             loss_q.backward()
-            self.critics_optimizer[i].step()
+            self.critic_optimizer.step()
 
-            self.actors_optimizer[i].zero_grad()
+            self.actor_optimizer.zero_grad()
             ac = action_batch.clone()
-            ac[:, i, :] = self.actors[i](state_batch[:, i, :])
-            loss_p = -self.critics[i](state_batch, ac).mean()
+            ac[:, i, :] = self.actor(state_batch[:, i, :])
+            loss_p = -self.critic(state_batch, ac).mean()
             loss_p.backward()
-            self.actors_optimizer[i].step()
+            self.actor_optimizer.step()
 
             c_loss.append(loss_q.item())
             a_loss.append(loss_p.item())
+
         if t % 100 == 0:
             for i in range(self.n_agents):
-                soft_update(self.critics_target[i], self.critics[i], tau)
-                soft_update(self.actors_target[i], self.actors[i], tau)
+                soft_update(self.critic_target, self.critic, self.kwargs['tau'])
+                soft_update(self.actor_target, self.actor, self.kwargs['tau'])
         return c_loss, a_loss
 
 
@@ -125,24 +111,16 @@ class MetaController(Trainer):
         self.schedule = LinearSchedule(10000, 0.1, 1)
         self.memory = ReplayMemory(kwargs['memory_length'])
 
-        self.actors, self.critics = [], []
-        self.actors_target, self.critics_target = [], []
-        self.actors_optimizer, self.critics_optimizer = [], []
-        for i in range(n_agents):
-            # Actor and target actor
-            actor = Actor(dim_obs, dim_act, activate='softmax')
-            self.actors.append(actor)
-            actor_target = Actor(dim_obs, dim_act, activate='softmax')
-            actor_target.load_state_dict(actor.state_dict())
-            self.actors_target.append(actor_target)
-            self.actors_optimizer.append(Adam(actor.parameters(), lr=kwargs['a_lr']))
-            # Critic and target critic
-            critic = Critic(n_agents, dim_obs, dim_act)
-            self.critics.append(critic)
-            critic_target = Critic(n_agents, dim_obs, dim_act)
-            critic_target.load_state_dict(critic.state_dict())
-            self.critics_target.append(critic_target)
-            self.critics_optimizer.append(Adam(critic.parameters(), lr=kwargs['c_lr']))
+        # Actor and target actor
+        self.actor = MetaActor(dim_obs, dim_act)
+        self.actor_target = MetaActor(dim_obs, dim_act)
+        self.actor_target.load_state_dict(self.actor.state_dict())
+        self.actor_optimizer = Adam(self.actor.parameters(), lr=kwargs['a_lr'])
+        # Critic and target critic
+        self.critic = Critic(n_agents, dim_obs, dim_act)
+        self.critic_target = Critic(n_agents, dim_obs, dim_act)
+        self.critic_target.load_state_dict(self.critic.state_dict())
+        self.critic_optimizer = Adam(self.critic.parameters(), lr=kwargs['c_lr'])
         self.mse_loss = nn.MSELoss()
 
     def dim(self, label='actor', batch_size=1):
@@ -162,56 +140,50 @@ class MetaController(Trainer):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
     def act(self, obs_n, t, test=False):
-        decay = np.random.random() > self.schedule.value(t) and not test
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
-        act_n = th.zeros(self.n_agents, self.n_actions)
-        for i in range(self.n_agents):
-            obs = obs_n[i, :].detach().unsqueeze(0)
-            act = self.actors[i](obs).squeeze()
-            if decay:
-                act += th.from_numpy(np.random.randn(self.n_actions)).type(FloatTensor)
-                act = th.softmax(act, dim=0)
-            act_n[i, :] = act
+        act_n = self.actor(obs_n.detach())
+        if np.random.random() < self.schedule.value(t) and not test:
+            noise = np.random.randn(self.n_agents, self.n_actions)
+            act_n += th.from_numpy(noise).type(FloatTensor)
+            act_n = th.softmax(act_n, dim=0)
         return act_n.data.cpu().numpy()
 
     def update(self, t):
         if t <= self.kwargs['learning_start']:
             return None, None
 
-        batch_size = self.kwargs['batch_size']
         gamma = self.kwargs['gamma']
-        tau = self.kwargs['tau']
+
+        transitions = self.memory.sample(self.kwargs['batch_size'])
+        state_batch = th.from_numpy(transitions[0]).type(FloatTensor)
+        action_batch = th.from_numpy(transitions[1]).type(FloatTensor)
+        n_states_batch = th.from_numpy(transitions[2]).type(FloatTensor)
+        reward_batch = th.from_numpy(transitions[3]).type(FloatTensor).unsqueeze(dim=-1)
+        done_batch = th.from_numpy(transitions[4]).type(FloatTensor).unsqueeze(dim=-1)
 
         c_loss, a_loss = [], []
         for i in range(self.n_agents):
-            transitions = self.memory.sample(batch_size)
-
-            state_batch = th.from_numpy(transitions[0]).type(FloatTensor)
-            action_batch = th.from_numpy(transitions[1]).type(FloatTensor)
-            n_states_batch = th.from_numpy(transitions[2]).type(FloatTensor)
-            reward_batch = th.from_numpy(transitions[3]).type(FloatTensor).unsqueeze(dim=-1)
-            done_batch = th.from_numpy(transitions[4]).type(FloatTensor).unsqueeze(dim=-1)
-
-            self.critics_optimizer[i].zero_grad()
-            current_q = self.critics[i](state_batch, action_batch)
-            n_actions = th.stack([self.actors_target[i](n_states_batch[:, i]) for i in range(self.n_agents)], dim=1)
-            target_next_q = self.critics_target[i](n_states_batch, n_actions)
-            target_q = target_next_q * gamma * (1 - done_batch[:, i, :]) + reward_batch[:, i, :]
+            self.critic_optimizer.zero_grad()
+            current_q = self.critic(state_batch, action_batch)
+            n_actions = self.actor_target(n_states_batch)
+            target_next_q = self.critic_target(n_states_batch, n_actions)
+            target_q = target_next_q * gamma * (1 - done_batch[:, i]) + reward_batch[:, i]
             loss_q = self.mse_loss(current_q, target_q.detach())
             loss_q.backward()
-            self.critics_optimizer[i].step()
+            self.critic_optimizer.step()
 
-            self.actors_optimizer[i].zero_grad()
+            self.actor_optimizer.zero_grad()
             ac = action_batch.clone()
-            ac[:, i, :] = self.actors[i](state_batch[:, i, :])
-            loss_p = -self.critics[i](state_batch, ac).mean()
+            ac[:, i, :] = self.actor(state_batch[:, i, :])
+            loss_p = -self.critic(state_batch, ac).mean()
             loss_p.backward()
-            self.actors_optimizer[i].step()
+            self.actor_optimizer.step()
 
             c_loss.append(loss_q.item())
             a_loss.append(loss_p.item())
+
         if t % 100 == 0:
             for i in range(self.n_agents):
-                soft_update(self.critics_target[i], self.critics[i], tau)
-                soft_update(self.actors_target[i], self.actors[i], tau)
+                soft_update(self.critic_target, self.critic, self.kwargs['tau'])
+                soft_update(self.actor_target, self.actor, self.kwargs['tau'])
         return c_loss, a_loss

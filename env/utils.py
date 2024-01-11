@@ -18,12 +18,8 @@ def bbox(pos: tuple, delta=(0.0, 0.0)):
     """
     :return: (min_x, min_y, max_x, max_y)
     """
-    return (
-        pos[0] - delta[0],
-        pos[1] - delta[1],
-        pos[0] + delta[0],
-        pos[1] + delta[1]
-    )
+    return (pos[0] - delta[0], pos[1] - delta[1],
+            pos[0] + delta[0], pos[1] + delta[1])
 
 
 def is_overlap(pos1: tuple, pos2: tuple, delta1=(0.0, 0.0), delta2=(0.0, 0.0)):
@@ -34,3 +30,7 @@ def is_overlap(pos1: tuple, pos2: tuple, delta1=(0.0, 0.0), delta2=(0.0, 0.0)):
     if box1[1] > box2[3] or box2[1] > box1[3]:
         return False
     return True
+
+
+def is_collision(obj1, obj2):
+    return distance(obj1.state.p_pos, obj2.state.p_pos) < obj1.size + obj2.size

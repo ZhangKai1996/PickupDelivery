@@ -66,7 +66,6 @@ class CityEnv(gym.Env):
     def step(self, action_n):
         # set action for each agent
         for i, agent in enumerate(self.scenario.agents):
-            agent.update()
             self._set_action(action_n[i], agent)
         # advance scenario state
         return self.scenario.step()

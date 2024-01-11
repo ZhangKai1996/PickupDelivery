@@ -31,8 +31,8 @@ def test(env, trainer, max_episode_len):
                 clear=terminal,
                 show=True
             )
-            # time.sleep(0.1)
-            rew_sum += min(rew_n)
+            time.sleep(0.1)
+            rew_sum += sum(rew_n)
             obs_n = next_obs_n
             if terminal:
                 break

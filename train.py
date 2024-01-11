@@ -11,8 +11,8 @@ def parse_args():
 
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
     # Environment
-    parser.add_argument("--num-agents", type=int, default=5, help="number of the agent (drone or car)")
-    parser.add_argument("--num-tasks", type=int, default=10, help="number of tasks (the pair of <m,b>)")
+    parser.add_argument("--num-agents", type=int, default=3, help="number of the agent (drone or car)")
+    parser.add_argument("--num-tasks", type=int, default=6, help="number of tasks (the pair of <m,b>)")
     parser.add_argument("--max-episode-len", type=int, default=50, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=1000000, help="number of episodes")
     parser.add_argument('--memory-length', default=int(1e6), type=int, help='number of experience replay pool')
@@ -57,20 +57,15 @@ def train(env, trainer, num_episodes, max_episode_len, save_rate):
             next_obs_n, rew_n, done_n, _ = env.step(act_n)
             done = all(done_n)
             terminal = done or episode_step >= max_episode_len
-            # env.render(
-            #     mode='Episode:{}, Step:{}'.format(episode, episode_step),
-            #     clear=terminal,
-            #     show=True
-            # )
             # Store the experience for controller
             trainer.add(obs_n, act_n, next_obs_n, rew_n, done_n, label='ctrl')
             # Update controller
             trainer.update_controller(step)
-
-            rew_sum += min(rew_n)
+            rew_sum += sum(rew_n)
             obs_n = next_obs_n
             if terminal:
                 break
+
         # Store experience for meta-controller
         next_obs_n_beta = env.observation_meta()
         trainer.add(obs_n_meta, scheme, next_obs_n_beta, rew_sum, 1.0, label='meta')

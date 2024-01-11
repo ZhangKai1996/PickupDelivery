@@ -1,20 +1,8 @@
 import numpy as np
+from rtree.index import Index, Property
 
 from env.core import *
-from env.utils import distance, is_overlap
-
-
-# def is_collision(obj1, obj2):
-#     return is_overlap(
-#         obj1.state.p_pos,
-#         obj2.state.p_pos,
-#         delta1=obj1.shape[1:],
-#         delta2=obj2.shape[1:]
-#     )
-
-
-def is_collision(obj1, obj2):
-    return distance(obj1.state.p_pos, obj2.state.p_pos) < obj1.size + obj2.size
+from env.utils import distance, bbox
 
 
 class Scenario:
@@ -90,56 +78,57 @@ class Scenario:
         for i, task in zip(agent_id, self.tasks):
             task.assign_to(self.agents[i])
 
-    def reward(self, agent):
-        # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
-        rew = distance(agent.state.p_pos, agent.last_state.p_pos)
-        for task in agent.tasks:
-            l = task.merchant
-            if l.occupied: continue
-            if is_collision(l, agent):
-                l.occupied = True
-                rew = 10.0
-                break
-        if agent.collide:
-            for a in self.agents:
-                if is_collision(a, agent): rew -= 1.0
-        return rew
-
     def observation_meta(self):
         obs_n = []
         for task in self.tasks:
-            p_pos_m = task.merchant.state.p_pos
             entity_pos = []
             for agent in self.agents:
-                entity_pos.append(p_pos_m - agent.state.p_pos)
-            obs = np.concatenate([p_pos_m, ] + entity_pos)
+                entity_pos.append(task.pick_pos - agent.state.p_pos)
+            obs = np.concatenate([task.pick_pos, ] + entity_pos)
             obs_n.append(obs)
         return np.array(obs_n)
 
     def observation(self, agent):
         # get positions of all entities in this agent's reference frame
-        entity_pos = []
+        task_pos = []
         for task in self.tasks:  # world.entities:
             if task not in agent.tasks:
-                entity_pos.append(np.zeros(self.dim_p))
+                task_pos.append(np.zeros(self.dim_p))
                 continue
-            m = task.merchant
-            if m.occupied:
-                entity_pos.append(np.zeros(self.dim_p))
-            else:
-                entity_pos.append(m.state.p_pos - agent.state.p_pos)
-        # communication of all other agents
-        other_pos = []
-        for other in self.agents:
-            if other is agent: continue
-            other_pos.append(other.state.p_pos - agent.state.p_pos)
-        return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos)
 
-    def done(self, agent):
-        for task in self.tasks:
-            if task not in agent.tasks: continue
-            if not task.merchant.occupied: return False
-        return True
+            if task.is_picked:
+                task_pos.append(np.zeros(self.dim_p))
+            else:
+                task_pos.append(task.pick_pos - agent.state.p_pos)
+        # communication of all other agents
+        agent_pos = []
+        for other in self.agents:
+            if other is agent:
+                continue
+            agent_pos.append(other.state.p_pos - agent.state.p_pos)
+        # communication of all barriers
+        barrier_pos = []
+        for barrier in self.barriers:
+            barrier_pos.append(barrier.state.p_pos - agent.state.p_pos)
+        obs = [agent.state.p_pos, ] + task_pos + agent_pos + barrier_pos
+        return np.concatenate(obs)
+
+    def reward(self, agent, idx):
+        # Agents are rewarded based on minimum agent distance to each landmark, penalized for collisions
+        done = True
+        rew = distance(agent.state.p_pos, agent.last_state.p_pos)
+        for task in agent.tasks:
+            if task.is_picked: continue
+            if task.check_occupied(agent):
+                rew = 10.0
+                continue
+            done = False
+
+        box = bbox(agent.state.p_pos, delta=(agent.size, agent.size))
+        for i in idx.intersection(box):
+            if agent.is_collision(self.entities[i]):
+                rew -= 10.0
+        return rew, done
 
     # update state of the world
     def step(self):
@@ -152,14 +141,22 @@ class Scenario:
         # integrate physical state
         self.integrate_state(p_force)
 
+        idx = self.__build_rtree()
         obs_n, reward_n, done_n = [], [], []
         for agent in self.agents:
             agent.update_mass()
             obs_n.append(self.observation(agent))
-            reward_n.append(self.reward(agent))
-            done_n.append(self.done(agent))
-        reward_n = [sum(reward_n) for _ in self.agents]
+            rew, done = self.reward(agent, idx)
+            reward_n.append(rew)
+            done_n.append(done)
+        # reward_n = [sum(reward_n) for _ in self.agents]
         return np.array(obs_n), reward_n, done_n, {}
+
+    def __build_rtree(self):
+        idx = Index(properties=Property(dimension=self.dim_p))
+        for i, entity in enumerate(self.entities):
+            idx.insert(i, bbox(entity.state.p_pos))
+        return idx
 
     # gather agent action forces
     def apply_action_force(self, p_force):
@@ -191,7 +188,10 @@ class Scenario:
     # integrate physical state
     def integrate_state(self, p_force):
         for i, entity in enumerate(self.entities):
-            if not entity.movable: continue
+            if not entity.movable:
+                continue
+
+            entity.last_state.set(other=entity.state)
             entity.state.p_vel = entity.state.p_vel * (1 - self.damping)
             if p_force[i] is not None:
                 entity.state.p_vel += (p_force[i] / entity.mass) * self.dt
