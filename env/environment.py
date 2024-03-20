@@ -64,11 +64,12 @@ class CityEnv(gym.Env):
             agent.action *= sensitivity
 
     def step(self, action_n):
-        # set action for each agent
-        for i, agent in enumerate(self.scenario.agents):
-            self._set_action(action_n[i], agent)
         # advance scenario state
-        return self.scenario.step()
+        return self.scenario.step(
+            action_n=action_n,
+            force_discrete_action=self.force_discrete_action,
+            discrete_action_space=self.discrete_action_space
+        )
 
     def render(self, **kwargs):
         if self.cv_render is None:

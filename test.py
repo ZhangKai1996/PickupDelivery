@@ -3,17 +3,41 @@ from tqdm import tqdm
 import numpy as np
 
 from env.environment import CityEnv
+from env.utils import one_hot
 from algo.framework import HieTrainer
 from train import parse_args, make_exp_id
 
 
-def test(env, trainer, max_episode_len):
+def fixed_scheme(obs_n, num_tasks):
+    scheme_idx, num_agents = [], len(obs_n)
+    for i in range(num_tasks):
+        scheme_idx.append(i % num_agents)
+    np.random.shuffle(scheme_idx)
+    num = np.random.randint(0, 4)
+    scheme = []
+    for i in range(num_tasks):
+        scheme.append(one_hot(scheme_idx[i]+1, num=num_agents))
+    scheme = np.stack(scheme)
+
+    # scheme, num_agents = [], len(obs_n)
+    # for i in range(num_tasks):
+    #     if i in [2, 3]:
+    #         scheme.append(one_hot(1, num=num_agents))
+    #     else:
+    #         scheme.append(one_hot(2, num=num_agents))
+    # scheme = np.stack(scheme)
+    return scheme
+
+
+def test(env, trainer, max_episode_len, num_tasks):
     step_stats, rew_stats, sr_stats = [], [], []
     ctrl_step = 0
     for episode in tqdm(range(1, 1000 + 1), desc='Testing'):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
-        scheme = trainer.select_scheme(obs_n_meta, episode, test=True)
+        # scheme = trainer.select_scheme(obs_n_meta, episode, test=True)
+        scheme = trainer.select_scheme(obs_n_meta, episode)
+        # scheme = fixed_scheme(obs_n, num_tasks)   # fixed scheme
         env.task_assignment(scheme)
 
         episode_step = 0
@@ -22,6 +46,7 @@ def test(env, trainer, max_episode_len):
             ctrl_step += 1
             episode_step += 1
             act_n = trainer.select_action(obs_n, ctrl_step, test=True)
+            # print(act_n)
             # Step the env and return outputs
             next_obs_n, rew_n, done_n, _ = env.step(act_n)
             done = all(done_n)
@@ -36,6 +61,7 @@ def test(env, trainer, max_episode_len):
             obs_n = next_obs_n
             if terminal:
                 break
+
         rew_stats.append(rew_sum)
         sr_stats.append(int(done))
         step_stats.append(episode_step)
@@ -69,7 +95,8 @@ def main():
     test(
         env=env,
         trainer=trainer,
-        max_episode_len=args.max_episode_len
+        max_episode_len=args.max_episode_len,
+        num_tasks=args.num_tasks
     )
     env.close()
 

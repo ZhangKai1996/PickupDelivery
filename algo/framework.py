@@ -46,7 +46,7 @@ class HieTrainer:
             prefix = 'ctrl'
             net_visual(
                 dim_input=[self.controller.dim(label='actor')[0], ],
-                net=self.controller.actor,
+                net=self.controller.actors[0],
                 d_type=FloatTensor,
                 filename=prefix + '_actor',
                 directory=self.path['graph_path'],
@@ -55,7 +55,7 @@ class HieTrainer:
             )
             net_visual(
                 dim_input=self.controller.dim(label='critic'),
-                net=self.controller.critic,
+                net=self.controller.critics[0],
                 d_type=FloatTensor,
                 filename=prefix + '_critic',
                 directory=self.path['graph_path'],
@@ -66,7 +66,7 @@ class HieTrainer:
             prefix = 'meta'
             net_visual(
                 dim_input=[self.meta_controller.dim(label='actor')[0], ],
-                net=self.meta_controller.actor,
+                net=self.meta_controller.actors[0],
                 d_type=FloatTensor,
                 filename=prefix + '_actor',
                 directory=self.path['graph_path'],
@@ -75,7 +75,7 @@ class HieTrainer:
             )
             net_visual(
                 dim_input=self.meta_controller.dim(label='critic'),
-                net=self.meta_controller.critic,
+                net=self.meta_controller.critics[0],
                 d_type=FloatTensor,
                 filename=prefix + '_critic',
                 directory=self.path['graph_path'],
@@ -106,16 +106,17 @@ class HieTrainer:
         self.ctrl_c_losses.append(c_loss)
         self.ctrl_a_losses.append(a_loss)
         if t % 100 == 0:
+            prefix = 'ctrl'
             # Record and visual the loss value of Actor and Critic
             mean_c_loss = np.mean(self.ctrl_c_losses, axis=0)
             self.scalars(
-                key='ctrl_critic_loss',
+                key=prefix + '_critic_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)},
                 episode=t
             )
             mean_a_loss = np.mean(self.ctrl_a_losses, axis=0)
             self.scalars(
-                key='ctrl_actor_loss',
+                key=prefix + '_actor_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)},
                 episode=t
             )
@@ -129,15 +130,16 @@ class HieTrainer:
         self.meta_c_losses.append(c_loss)
         self.meta_a_losses.append(a_loss)
         if t % 100 == 0:
+            prefix = 'meta'
             mean_c_loss = np.mean(self.meta_c_losses, axis=0)
             self.scalars(
-                key='meta_critic_loss',
+                key=prefix + '_critic_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)},
                 episode=t
             )
             mean_a_loss = np.mean(self.meta_a_losses, axis=0)
             self.scalars(
-                key='meta_actor_loss',
+                key=prefix + '_actor_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)},
                 episode=t
             )
@@ -148,21 +150,24 @@ class HieTrainer:
             load_path = self.path['model_path']
 
         if load_path is not None:
-            a, c = self.controller.actor, self.controller.critic
-            a_state_dict = th.load(load_path + 'ctrl_actor.pth').state_dict()
-            c_state_dict = th.load(load_path + 'ctrl_critic.pth').state_dict()
-            a.load_state_dict(a_state_dict)
-            c.load_state_dict(c_state_dict)
-            self.controller.actor_target = deepcopy(a)
-            self.controller.critic_target = deepcopy(c)
-
-            a, c = self.meta_controller.actor, self.meta_controller.critic
-            a_state_dict = th.load(load_path + 'meta_actor.pth').state_dict()
-            c_state_dict = th.load(load_path + 'meta_critic.pth').state_dict()
-            a.load_state_dict(a_state_dict)
-            c.load_state_dict(c_state_dict)
-            self.meta_controller.actor_target = deepcopy(a)
-            self.meta_controller.critic_target = deepcopy(c)
+            prefix = 'ctrl'
+            iterator = zip(self.controller.actors, self.controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                a_state_dict = th.load(load_path + prefix + '_actor_{}.pth'.format(i)).state_dict()
+                c_state_dict = th.load(load_path + prefix + '_critic_{}.pth'.format(i)).state_dict()
+                a.load_state_dict(a_state_dict)
+                c.load_state_dict(c_state_dict)
+                self.controller.actors_target[i] = deepcopy(a)
+                self.controller.critics_target[i] = deepcopy(c)
+            prefix = 'meta'
+            iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                a_state_dict = th.load(load_path + prefix + '_actor_{}.pth'.format(i)).state_dict()
+                c_state_dict = th.load(load_path + prefix + '_critic_{}.pth'.format(i)).state_dict()
+                a.load_state_dict(a_state_dict)
+                c.load_state_dict(c_state_dict)
+                self.meta_controller.actors_target[i] = deepcopy(a)
+                self.meta_controller.critics_target[i] = deepcopy(c)
         else:
             print('Load path is empty!')
             raise NotImplementedError
@@ -172,10 +177,16 @@ class HieTrainer:
             save_path = self.path['model_path']
 
         if save_path is not None:
-            th.save(self.controller.actor, save_path + 'ctrl_actor.pth')
-            th.save(self.controller.critic, save_path + 'ctrl_critic.pth')
-            th.save(self.meta_controller.actor, save_path + 'meta_actor.pth')
-            th.save(self.meta_controller.critic, save_path + 'meta_critic.pth')
+            prefix = 'ctrl'
+            iterator = zip(self.controller.actors, self.controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
+                th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
+            prefix = 'meta'
+            iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
+            for i, (a, c) in enumerate(iterator):
+                th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
+                th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
         else:
             print('Save path is empty!')
             raise NotImplementedError

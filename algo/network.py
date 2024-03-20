@@ -24,30 +24,22 @@ class Critic(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, dim_obs, dim_act):
+    def __init__(self, dim_obs, dim_act, activate='tanh'):
         super(Actor, self).__init__()
         self.FC1 = nn.Linear(dim_obs[0], 512)
         self.FC2 = nn.Linear(512, 128)
         self.FC3 = nn.Linear(128, dim_act)
+        if activate == 'tanh':
+            self.activate = F.tanh
+        elif activate == 'softmax':
+            self.activate = F.softmax
+        else:
+            raise NotImplementedError
 
     def forward(self, obs_n):
         out = F.relu(self.FC1(obs_n))
         out = F.relu(self.FC2(out))
-        out = F.softmax(self.FC3(out), dim=1)
-        return out
-
-
-class MetaActor(nn.Module):
-    def __init__(self, dim_obs, dim_act):
-        super(MetaActor, self).__init__()
-        self.FC1 = nn.Linear(dim_obs[0], 512)
-        self.FC2 = nn.Linear(512, 128)
-        self.FC3 = nn.Linear(128, dim_act)
-
-    def forward(self, obs_n):
-        out = F.relu(self.FC1(obs_n))
-        out = F.relu(self.FC2(out))
-        out = F.tanh(self.FC3(out))
+        out = self.activate(self.FC3(out))
         return out
 
 

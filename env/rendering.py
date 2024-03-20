@@ -12,17 +12,26 @@ def make_random_color():
 
 
 class CVRender:
-    def __init__(self, env):
-        self.width, self.height = env.scenario.size
-        self.range = env.scenario.range_p
+    def __init__(self, env, width=800, height=800):
         self.env = env
+        self.width = width
+        self.height = height
+        self.range = env.scenario.range_p
         self.video = cv2.VideoWriter(
             'trained/pickup_delivery.avi',
             cv2.VideoWriter_fourcc(*'MJPG'),
-            30, (self.width, self.height)
+            30, (self.width+300, self.height)
         )
-        self.base_img = np.ones((self.height, self.width, 3), np.uint8) * 255
+
+        self.base_img = None
+        self.make_base_img()
+        self.side_bar = np.ones((self.height, 300, 3), np.uint8) * 255
+        cv2.rectangle(self.side_bar, (0, 0), (300, self.height), color=(0, 0, 0), thickness=1)
         # cv2.imwrite('trained/base_image.png', self.base_img)
+
+    def make_base_img(self):
+        self.base_img = np.ones((self.height, self.width, 3), np.uint8) * 255
+        cv2.rectangle(self.base_img, (0, 0), (self.width, self.height), color=(0, 0, 0), thickness=1)
 
     def transform(self, pos, w_p=0, h_p=0):
         """
@@ -34,84 +43,62 @@ class CVRender:
         return (w_p + int((pos[0] - min_x) / (max_x - min_x) * _width),
                 h_p + int((pos[1] - min_y) / (max_y - min_y) * _height))
 
-    def _draw_task(self, tasks, base_img, delta):
-        for i, task in enumerate(tasks):
-            # Merchant
-            merchant = task.merchant
-            pos = self.transform(pos=merchant.state.p_pos)
-            radius = int(merchant.size / delta * self.width)
-            thickness = -1 if merchant.occupied else 2
-            cv2.circle(base_img, pos, radius, merchant.color, thickness=thickness)
-            cv2.putText(
-                base_img, str(i),
-                (pos[0] - 5, pos[1] + 5) if i < 10 else (pos[0] - 10, pos[1] + 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                (0, 0, 0), 1,
-                cv2.LINE_AA
-            )
-            # Buyer
-            buyer = task.buyer
-            pos = self.transform(pos=buyer.state.p_pos)
-            radius = int(buyer.size / delta * self.width)
-            thickness = -1 if buyer.occupied else 2
-            cv2.circle(base_img, pos, radius, buyer.color, thickness=thickness)
-            cv2.putText(
-                base_img, str(i),
-                (pos[0] - 5, pos[1] + 5) if i < 10 else (pos[0] - 10, pos[1] + 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                (0, 0, 0), 1, cv2.LINE_AA
-            )
+    def __draw_entity(self, entity, base_img, delta, i, text_args):
+        pos = self.transform(pos=entity.state.p_pos)
+        radius = int(entity.size / delta * self.width*5)
+        thickness = -1 if entity.occupied else 2
+        cv2.circle(base_img, pos, radius, entity.color, thickness=thickness)
+        text_args[2] = entity.color
+        cv2.putText(base_img, str(i), (pos[0]-5, pos[1]+4), *text_args)
 
-    def _draw_rider(self, agents, base_img, delta):
-        for agent in agents:
-            pos = self.transform(pos=agent.state.p_pos)
-            radius = int(agent.size / delta * self.width)
-            cv2.circle(base_img, pos, radius, agent.color, thickness=-1)
-            info = [task.name for task in agent.tasks if not task.is_finished]
-            if len(info) > 0:
-                cv2.putText(
-                    base_img, ','.join(info),
-                    (pos[0]-radius+10, pos[1] + 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    (0, 0, 0), 1, cv2.LINE_AA
-                )
-            last_pos = agent.last_state
-            if last_pos is not None:
-                last_pos = self.transform(pos=agent.last_state.p_pos)
-                cv2.line(self.base_img, pos, last_pos, (100, 100, 100), thickness=2)
+    def __draw_agent(self, agent, base_img, side_bar, delta, text_pos, text_args):
+        pos = self.transform(pos=agent.state.p_pos)
+        radius = int(agent.size / delta * self.width*5)
+        cv2.circle(base_img, pos, radius, agent.color, thickness=-1)
+        cv2.putText(base_img, agent.name, pos, *text_args)
 
-    def _draw_barrier(self, barriers, base_img, delta):
-        for i, barrier in enumerate(barriers):
-            pos = self.transform(pos=barrier.state.p_pos)
-            radius = int(barrier.size / delta * self.width)
-            cv2.circle(base_img, pos, radius, barrier.color, thickness=-1)
+        cv2.putText(side_bar, agent.status(), text_pos, *text_args)
+        for i, task in enumerate(agent.tasks):
+            text_pos[1] += 20
+            cv2.putText(side_bar, task.status(), text_pos, *text_args)
+        text_pos[1] += 30
+        last_pos = agent.last_state
+        if last_pos is not None:
+            last_pos = self.transform(pos=agent.last_state.p_pos)
+            cv2.line(self.base_img, pos, last_pos, (100, 100, 100), thickness=2)
+        return text_pos
 
     def draw(self, mode=None, clear=False, show=False):
+        delta = self.range[1] - self.range[0]
+        env = self.env
+
         base_img = copy.deepcopy(self.base_img)
+        side_bar = copy.deepcopy(self.side_bar)
+        text_args = [cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA]
+
         # Global Information
         if mode is not None:
-            cv2.putText(
-                base_img, mode,
-                (40, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5, (0, 0, 0), 1, cv2.LINE_AA
+            cv2.putText(side_bar, mode, (20, 40), *text_args)
+        # Tasks
+        for i, task in enumerate(env.scenario.tasks):
+            self.__draw_entity(task.merchant, base_img, delta, i, text_args[:])
+            self.__draw_entity(task.buyer, base_img, delta, i, text_args[:])
+        # Drones
+        text_pos = [20, 70]
+        for i, agent in enumerate(env.scenario.agents):
+            text_pos = self.__draw_agent(
+                agent, base_img, side_bar,
+                delta, text_pos, text_args
             )
-        delta = self.range[1] - self.range[0]
-        scenario = self.env.scenario
-        # Tasks (Merchants and Buyers)
-        self._draw_task(scenario.tasks, base_img, delta)
-        # Riders
-        self._draw_rider(scenario.agents, base_img, delta)
-        # Barriers
-        self._draw_barrier(scenario.barriers, base_img, delta)
-        # clear the objects of base image when another episode starts.
+        # Clear the objects of base image when another episode starts.
         if clear:
-            self.base_img = np.ones((self.height, self.width, 3), np.uint8) * 255
-        # take base image as a frame of video.
+            self.make_base_img()
+
+        base_img = np.hstack([base_img, side_bar])
         self.video.write(base_img)
         if show:
             cv2.imshow('base image', base_img)
-            cv2.waitKey(10)
+            cv2.waitKey(1)
             # cv2.destroyAllWindows()
             # if cv2.waitKey(0) == 113:
             #     cv2.destroyAllWindows()

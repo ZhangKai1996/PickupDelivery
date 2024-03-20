@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from .utils import is_collision
+from env.utils import distance
 
 
 # physical/external base state of all entities
@@ -18,15 +18,13 @@ class EntityState(object):
 
 # properties and state of physical world entity
 class Entity(object):
-    def __init__(self, name='', size=0.05, movable=False, collide=True, color=(0.0, 0.0, 0.0)):
+    def __init__(self, name='', size=0.05, movable=False, color=(0.0, 0.0, 0.0)):
         # name
         self.name = name
         # properties:
         self.size = size
         # entity can move / be pushed
         self.movable = movable
-        # entity collides with others
-        self.collide = collide
         # material density (affects mass)
         self.density = 25.0
         # color
@@ -37,48 +35,35 @@ class Entity(object):
         # state
         self.state = EntityState()
         self.last_state = EntityState()
-        # mass
-        self.initial_mass = 1.0
-        self.mass = 1.0
-
-    def update(self):
-        self.last_state.set(other=self.state)
 
 
 # properties of landmark entities
 class Buyer(Entity):
     def __init__(self, **kwargs):
         super(Buyer, self).__init__(**kwargs)
-        self.collide = False
-        self.movable = False
         self.occupied = False
-        self.size = 0.20
+        self.occ_time = None
+
+    def update(self, clock):
+        self.occupied = True
+        self.occ_time = clock
 
 
 class Merchant(Entity):
     def __init__(self, **kwargs):
         super(Merchant, self).__init__(**kwargs)
-        self.collide = False
-        self.movable = False
         self.occupied = False
-        self.size = 0.20
+        self.occ_time = None
 
-
-class Barrier(Entity):
-    def __init__(self, **kwargs):
-        super(Barrier, self).__init__(**kwargs)
-        self.collide = True
-        self.movable = False
+    def update(self, clock):
+        self.occupied = True
+        self.occ_time = clock
 
 
 # properties of agent entities
 class Agent(Entity):
     def __init__(self, **kwargs):
         super(Agent, self).__init__(**kwargs)
-        self.collide = True
-        self.movable = True
-        # cannot observe the world
-        self.o_range = 0.1
         # physical motor noise amount
         self.u_noise = None
         # control range
@@ -87,73 +72,81 @@ class Agent(Entity):
         self.action = None
         # tasks
         self.tasks = []
-        self.payload = 10.0
+        # endurance
+        self.dist = 0.0
+        # mass
+        self.initial_mass = 1.0
+
+    def status(self):
+        return '>>>{}: ({},{}), ({:>6.3f})'.format(
+            self.name, self.initial_mass, self.mass, self.dist
+        )
+
+    def pre_update(self):
+        self.last_state.set(other=self.state)
+
+    def update(self):
+        self.dist += distance(self.last_state.p_pos, self.state.p_pos)
+
+    def empty(self):
+        if len(self.tasks) <= 0:
+            return True
+        return all([task.is_finished() for task in self.tasks])
 
     @property
-    def is_overload(self):
-        return self.mass - self.initial_mass > self.payload
+    def mass(self):
+        m = self.initial_mass
+        # for task in self.tasks:
+        #     if task.is_finished():
+        #         continue
+        #     if task.is_picked():
+        #         m += task.mass
+        return m
 
-    def is_collision(self, entity):
-        return is_collision(self, entity)
-
-    def update_mass(self):
-        task_mass = sum([t.mass for t in self.tasks if t.is_picked])
-        self.mass = self.initial_mass + task_mass
+    def clear(self):
+        self.dist = 0.0
+        self.tasks = []
+        self.action = None
 
 
 class Task:
     def __init__(self, name='', buyer=None, merchant=None, clock=0):
         self.name = name
+        self.clock = clock
+        self.mass = 1.0
         self.merchant = buyer
         self.buyer = merchant
-        self.clock = clock
         self.agent = None
-        self.status = 'Unassigned'
 
-    @property
-    def mass(self):
-        return 1.0
+    def status(self):
+        status = [self.name, ]
+        if self.is_finished():
+            status += ['Finished', str(self.pick_time()), str(self.delivery_time())]
+        elif self.is_picked():
+            status += ['Picked', str(self.pick_time()), '-1']
+        elif self.is_assigned():
+            status += ['Assigned', '-1', '-1']
+        else:
+            status += ['Unassigned', '-1', '-1']
+        return ','.join(status)
 
-    @property
-    def pick_pos(self):
-        return self.merchant.state.p_pos
+    def pick_time(self):
+        m = self.merchant
+        if not m.occupied:
+            return None
+        return m.occ_time - self.clock
 
-    @property
-    def delivery_pos(self):
-        return self.buyer.state.p_pos
+    def delivery_time(self):
+        b = self.buyer
+        if not b.occupied:
+            return None
+        return b.occ_time - self.clock
 
-    @property
     def is_assigned(self):
-        return self.status == 'Assigned'
+        return self.agent is not None
 
-    @property
     def is_picked(self):
-        return self.status == 'Pickup'
+        return self.is_assigned() and self.merchant.occupied
 
-    @property
     def is_finished(self):
-        return self.status == 'Finished'
-
-    def assign_to(self, agent):
-        self.agent = agent
-        agent.tasks.append(self)
-        self.update_task_status()
-
-    def check_occupied(self, agent):
-        if is_collision(self.merchant, agent):
-            self.merchant.occupied = True
-            self.update_task_status()
-            return True
-        return False
-
-    def update_task_status(self):
-        if self.buyer.occupied:
-            self.status = 'Finished'
-            return
-        if self.merchant.occupied:
-            self.status = 'Pickup'
-            return
-        if self.agent is not None:
-            self.status = 'Assigned'
-            return
-        self.status = 'Unassigned'
+        return self.is_picked() and self.buyer.occupied
