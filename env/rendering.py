@@ -12,7 +12,7 @@ def make_random_color():
 
 
 class CVRender:
-    def __init__(self, env, width=800, height=800):
+    def __init__(self, env, width=1200, height=1200):
         self.env = env
         self.width = width
         self.height = height
@@ -43,17 +43,24 @@ class CVRender:
         return (w_p + int((pos[0] - min_x) / (max_x - min_x) * _width),
                 h_p + int((pos[1] - min_y) / (max_y - min_y) * _height))
 
-    def __draw_entity(self, entity, base_img, delta, i, text_args):
+    def __draw_person(self, entity, base_img, delta, i, text_args):
         pos = self.transform(pos=entity.state.p_pos)
-        radius = int(entity.size / delta * self.width*5)
-        thickness = -1 if entity.occupied else 2
+        radius = int(entity.size / delta * self.width)
+        thickness = -1 if entity.occupied is not None else 2
         cv2.circle(base_img, pos, radius, entity.color, thickness=thickness)
+        text_args[2] = entity.color
+        cv2.putText(base_img, str(i), (pos[0]-5, pos[1]+4), *text_args)
+
+    def __draw_stone(self, entity, base_img, delta, i, text_args):
+        pos = self.transform(pos=entity.state.p_pos)
+        radius = int(entity.size / delta * self.width)
+        cv2.circle(base_img, pos, radius, entity.color, thickness=-1)
         text_args[2] = entity.color
         cv2.putText(base_img, str(i), (pos[0]-5, pos[1]+4), *text_args)
 
     def __draw_agent(self, agent, base_img, side_bar, delta, text_pos, text_args):
         pos = self.transform(pos=agent.state.p_pos)
-        radius = int(agent.size / delta * self.width*5)
+        radius = int(agent.size / delta * self.width)
         cv2.circle(base_img, pos, radius, agent.color, thickness=-1)
         cv2.putText(base_img, agent.name, pos, *text_args)
 
@@ -70,7 +77,7 @@ class CVRender:
 
     def draw(self, mode=None, clear=False, show=False):
         delta = self.range[1] - self.range[0]
-        env = self.env
+        scenario = self.env.scenario
 
         base_img = copy.deepcopy(self.base_img)
         side_bar = copy.deepcopy(self.side_bar)
@@ -80,16 +87,18 @@ class CVRender:
         if mode is not None:
             cv2.putText(side_bar, mode, (20, 40), *text_args)
         # Tasks
-        for i, task in enumerate(env.scenario.tasks):
-            self.__draw_entity(task.merchant, base_img, delta, i, text_args[:])
-            self.__draw_entity(task.buyer, base_img, delta, i, text_args[:])
+        for i, task in enumerate(scenario.tasks):
+            self.__draw_person(task.merchant, base_img, delta, i, text_args[:])
+            self.__draw_person(task.buyer, base_img, delta, i, text_args[:])
         # Drones
         text_pos = [20, 70]
-        for i, agent in enumerate(env.scenario.agents):
+        for i, agent in enumerate(scenario.agents):
             text_pos = self.__draw_agent(
                 agent, base_img, side_bar,
                 delta, text_pos, text_args
             )
+        for i, barrier in enumerate(scenario.barriers):
+            self.__draw_stone(barrier, base_img, delta, i, text_args[:])
         # Clear the objects of base image when another episode starts.
         if clear:
             self.make_base_img()

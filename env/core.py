@@ -15,6 +15,10 @@ class EntityState(object):
         self.p_pos = deepcopy(other.p_pos)
         self.p_vel = deepcopy(other.p_vel)
 
+    def clear(self):
+        self.p_pos = None
+        self.p_vel = None
+
 
 # properties and state of physical world entity
 class Entity(object):
@@ -36,38 +40,48 @@ class Entity(object):
         self.state = EntityState()
         self.last_state = EntityState()
 
+    def set_state(self, pos=None, vel=None):
+        self.state.p_pos = pos
+        self.state.p_vel = vel
+
+    def clear(self):
+        self.state = EntityState()
+        self.last_state = EntityState()
+
 
 # properties of landmark entities
-class Buyer(Entity):
+class Person(Entity):
     def __init__(self, **kwargs):
-        super(Buyer, self).__init__(**kwargs)
-        self.occupied = False
-        self.occ_time = None
+        super(Person, self).__init__(**kwargs)
+        self.movable = False
+        self.occupied = None
 
     def update(self, clock):
-        self.occupied = True
-        self.occ_time = clock
+        self.occupied = clock
+
+    def clear(self):
+        super().clear()
+        self.occupied = None
 
 
-class Merchant(Entity):
+class Stone(Entity):
     def __init__(self, **kwargs):
-        super(Merchant, self).__init__(**kwargs)
-        self.occupied = False
-        self.occ_time = None
+        super(Stone, self).__init__(**kwargs)
+        self.movable = False
 
-    def update(self, clock):
-        self.occupied = True
-        self.occ_time = clock
+    def clear(self):
+        super().clear()
 
 
 # properties of agent entities
 class Agent(Entity):
     def __init__(self, **kwargs):
         super(Agent, self).__init__(**kwargs)
+        self.movable = True
         # physical motor noise amount
         self.u_noise = None
         # control range
-        self.u_range = 1.0
+        self.u_range = 5.0
         # action
         self.action = None
         # tasks
@@ -88,7 +102,7 @@ class Agent(Entity):
     def update(self):
         self.dist += distance(self.last_state.p_pos, self.state.p_pos)
 
-    def empty(self):
+    def is_empty(self):
         if len(self.tasks) <= 0:
             return True
         return all([task.is_finished() for task in self.tasks])
@@ -96,14 +110,15 @@ class Agent(Entity):
     @property
     def mass(self):
         m = self.initial_mass
-        # for task in self.tasks:
-        #     if task.is_finished():
-        #         continue
-        #     if task.is_picked():
-        #         m += task.mass
+        for task in self.tasks:
+            if task.is_finished():
+                continue
+            if task.is_picked():
+                m += task.mass
         return m
 
     def clear(self):
+        super().clear()
         self.dist = 0.0
         self.tasks = []
         self.action = None
@@ -114,8 +129,8 @@ class Task:
         self.name = name
         self.clock = clock
         self.mass = 1.0
-        self.merchant = buyer
-        self.buyer = merchant
+        self.merchant = merchant
+        self.buyer = buyer
         self.agent = None
 
     def status(self):
@@ -132,21 +147,28 @@ class Task:
 
     def pick_time(self):
         m = self.merchant
-        if not m.occupied:
+        if m.occupied is None:
             return None
-        return m.occ_time - self.clock
+        return m.occupied - self.clock
 
     def delivery_time(self):
         b = self.buyer
-        if not b.occupied:
+        if b.occupied is None:
             return None
-        return b.occ_time - self.clock
+        return b.occupied - self.clock
 
     def is_assigned(self):
         return self.agent is not None
 
     def is_picked(self):
-        return self.is_assigned() and self.merchant.occupied
+        return self.is_assigned() and self.merchant.occupied is not None
 
     def is_finished(self):
-        return self.is_picked() and self.buyer.occupied
+        return self.is_picked() and self.buyer.occupied is not None
+
+    def clear(self):
+        self.agent = None
+        self.merchant.clear()
+        self.buyer.clear()
+
+

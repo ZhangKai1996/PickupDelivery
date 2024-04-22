@@ -12,9 +12,10 @@ def parse_args():
 
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
     # Environment
-    parser.add_argument("--num-agents", type=int, default=2, help="number of the agent (drone or car)")
+    parser.add_argument("--num-agents", type=int, default=3, help="number of the agent (drone or car)")
     parser.add_argument("--num-tasks", type=int, default=6, help="number of tasks (the pair of <m,b>)")
-    parser.add_argument("--max-episode-len", type=int, default=40, help="maximum episode length")
+    parser.add_argument("--num-barriers", type=int, default=30, help="number of barriers")
+    parser.add_argument("--max-episode-len", type=int, default=100, help="maximum episode length")
     parser.add_argument("--num-episodes", type=int, default=1000000, help="number of episodes")
     parser.add_argument('--memory-length', default=int(1e6), type=int, help='number of experience replay pool')
     parser.add_argument("--learning-start", type=int, default=5000, help="start updating after this number of step")
@@ -28,7 +29,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=128, help="number of units in the mlp")
     # Checkpointing
-    parser.add_argument("--exp-name", type=str, default='v1.0', help="name of the experiment")
+    parser.add_argument("--exp-name", type=str, default='train', help="name of the experiment")
     parser.add_argument("--seed", type=int, default=1111, help="name of the experiment")
     parser.add_argument('--render', default=True, type=bool)
     parser.add_argument("--save-rate", type=int, default=100, help="save model once every several episodes")
@@ -38,20 +39,16 @@ def parse_args():
 
 
 def fixed_scheme(obs_n, num_tasks):
-    scheme_idx, num_agents = [], len(obs_n)
-    for i in range(num_tasks):
-        scheme_idx.append(i % num_agents)
-    np.random.shuffle(scheme_idx)
+    num_agents = len(obs_n)
     scheme = []
-    for i in range(num_tasks):
-        scheme.append(one_hot(scheme_idx[i]+1, num=num_agents))
+    for _ in num_tasks:
+        idx = np.random.randint(0, num_agents)
+        scheme.append(one_hot(idx + 1, num=num_agents))
     scheme = np.stack(scheme)
     return scheme
 
 
 def train(env, trainer, num_episodes, max_episode_len, save_rate, num_tasks):
-    # trainer.load_model()
-
     rew_stats, sr_stats = [], []
     step = 0
     start_time = time.time()
@@ -59,7 +56,7 @@ def train(env, trainer, num_episodes, max_episode_len, save_rate, num_tasks):
     for episode in range(1, num_episodes + 1):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
-        scheme = trainer.select_scheme(obs_n_meta, episode)
+        scheme = trainer.select_scheme(obs_n_meta, t=episode)
         # scheme = fixed_scheme(obs_n, num_tasks)  # fixed scheme
         env.task_assignment(scheme)
 
@@ -68,16 +65,16 @@ def train(env, trainer, num_episodes, max_episode_len, save_rate, num_tasks):
         while True:
             step += 1
             episode_step += 1
-            act_n = trainer.select_action(obs_n, step)
+            act_n = trainer.select_action(obs_n, t=step)
             # Step the env and return outputs
             next_obs_n, rew_n, done_n, _ = env.step(act_n)
             done = all(done_n)
             terminal = done or episode_step >= max_episode_len
-            # env.render(
-            #     mode='Episode:{}, Step:{}'.format(episode, episode_step),
-            #     clear=terminal,
-            #     show=True
-            # )
+            env.render(
+                mode='Episode:{}, Step:{}'.format(episode, episode_step),
+                clear=terminal,
+                show=True
+            )
             # Store the experience for controller
             trainer.add(obs_n, act_n, next_obs_n, rew_n, done_n, label='ctrl')
             # Update controller
@@ -88,6 +85,8 @@ def train(env, trainer, num_episodes, max_episode_len, save_rate, num_tasks):
             if terminal:
                 break
         # print(ctrl_step, rew_sum)
+        trainer.add(obs_n_meta, scheme, obs_n_meta, np.sum(rew_sum), True, label='meta')
+        trainer.update_meta_controller(step)
         rew_stats.append(np.sum(rew_sum, axis=0))
         sr_stats.append(int(done))
 
@@ -135,6 +134,7 @@ def main():
         learning_start=args.learning_start,
         memory_length=args.memory_length,
     )
+    # trainer.load_model()
     # Train with interaction.
     train(
         env=env,

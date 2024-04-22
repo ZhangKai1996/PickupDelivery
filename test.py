@@ -1,52 +1,30 @@
 import time
-from tqdm import tqdm
+
 import numpy as np
 
 from env.environment import CityEnv
-from env.utils import one_hot
 from algo.framework import HieTrainer
-from train import parse_args, make_exp_id
+
+from train import parse_args, make_exp_id, fixed_scheme
 
 
-def fixed_scheme(obs_n, num_tasks):
-    scheme_idx, num_agents = [], len(obs_n)
-    for i in range(num_tasks):
-        scheme_idx.append(i % num_agents)
-    np.random.shuffle(scheme_idx)
-    num = np.random.randint(0, 4)
-    scheme = []
-    for i in range(num_tasks):
-        scheme.append(one_hot(scheme_idx[i]+1, num=num_agents))
-    scheme = np.stack(scheme)
+def train(env, trainer, num_episodes, max_episode_len, num_tasks):
+    rew_stats, sr_stats = [], []
+    step = 0
 
-    # scheme, num_agents = [], len(obs_n)
-    # for i in range(num_tasks):
-    #     if i in [2, 3]:
-    #         scheme.append(one_hot(1, num=num_agents))
-    #     else:
-    #         scheme.append(one_hot(2, num=num_agents))
-    # scheme = np.stack(scheme)
-    return scheme
-
-
-def test(env, trainer, max_episode_len, num_tasks):
-    step_stats, rew_stats, sr_stats = [], [], []
-    ctrl_step = 0
-    for episode in tqdm(range(1, 1000 + 1), desc='Testing'):
+    for episode in range(1, num_episodes + 1):
         obs_n, done = env.reset(), False
         obs_n_meta = env.observation_meta()
-        # scheme = trainer.select_scheme(obs_n_meta, episode, test=True)
-        scheme = trainer.select_scheme(obs_n_meta, episode)
-        # scheme = fixed_scheme(obs_n, num_tasks)   # fixed scheme
+        scheme = trainer.select_scheme(obs_n_meta, t=episode)
+        # scheme = fixed_scheme(obs_n, num_tasks)  # fixed scheme
         env.task_assignment(scheme)
 
         episode_step = 0
-        rew_sum = 0.0
+        rew_sum = []
         while True:
-            ctrl_step += 1
+            step += 1
             episode_step += 1
-            act_n = trainer.select_action(obs_n, ctrl_step, test=True)
-            # print(act_n)
+            act_n = trainer.select_action(obs_n, t=step)
             # Step the env and return outputs
             next_obs_n, rew_n, done_n, _ = env.step(act_n)
             done = all(done_n)
@@ -57,17 +35,24 @@ def test(env, trainer, max_episode_len, num_tasks):
                 show=True
             )
             time.sleep(0.1)
-            rew_sum += sum(rew_n)
+            rew_sum.append(rew_n)
             obs_n = next_obs_n
             if terminal:
                 break
-
-        rew_stats.append(rew_sum)
+        # print(ctrl_step, rew_sum)
+        mean_rew_epi = np.sum(rew_sum, axis=0)
+        rew_stats.append(mean_rew_epi)
         sr_stats.append(int(done))
-        step_stats.append(episode_step)
-    print('Step:{:>6.2f},Rew:{:>+6.2f},SR:{:>4.2f}'.format(
-        np.mean(step_stats), np.mean(rew_stats), np.mean(sr_stats))
-    )
+        print('Episode:{:>5d}, Step:{:>7d}, Done:{}'.format(
+            episode, step, int(done)), end=', '
+        )
+        for i, r in enumerate(mean_rew_epi):
+            print('Rew_{}:{:>+8.2f}'.format(i, r), end=', ')
+        print()
+    mean_rew = np.mean(rew_stats, axis=0)
+    for i, r in enumerate(mean_rew):
+        print('Rew_{}:{:>+7.2f}'.format(i, r), end=', ')
+    print('Rew: {:>7.2f},SR:{:>3.2f}'.format(sum(mean_rew), np.mean(sr_stats)))
 
 
 def main():
@@ -81,7 +66,6 @@ def main():
         num_tasks=args.num_tasks,
         num_agents=args.num_agents,
         folder=make_exp_id(args),
-        test=True,
         tau=args.tau,
         a_lr=args.a_lr,
         c_lr=args.c_lr,
@@ -92,9 +76,10 @@ def main():
     )
     trainer.load_model()
     # Train with interaction.
-    test(
+    train(
         env=env,
         trainer=trainer,
+        num_episodes=1000,
         max_episode_len=args.max_episode_len,
         num_tasks=args.num_tasks
     )

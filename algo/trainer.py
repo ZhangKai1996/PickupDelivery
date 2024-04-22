@@ -59,8 +59,12 @@ class Controller(Trainer):
     def add_experience(self, obs_n, act_n, next_obs_n, rew_n, done_n):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
-    def act(self, obs_n, t, test=False):
-        decay = np.random.random() <= self.schedule.value(t) and not test
+    def act(self, obs_n, t=None):
+        if t is not None:
+            decay = np.random.random() <= self.schedule.value(t)
+        else:
+            decay = False
+
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):
@@ -161,9 +165,12 @@ class MetaController(Trainer):
         done_n = np.array([done, ] * self.n_agents)
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
-    def act(self, obs_n, t, test=False):
-        # decay = np.random.random() > self.schedule.value(t) and not test
-        decay = True
+    def act(self, obs_n, t=None):
+        if t is not None:
+            decay = np.random.random() <= self.schedule.value(t)
+        else:
+            decay = False
+
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):

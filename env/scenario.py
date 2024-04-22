@@ -1,6 +1,6 @@
 import numpy as np
 
-from env.core import Agent, Task, Buyer, Merchant
+from env.core import Agent, Task, Person, Stone
 from env.utils import distance
 
 
@@ -10,20 +10,24 @@ class Scenario:
         self.agents = [Agent() for _ in range(args.num_agents)]
         for i, agent in enumerate(self.agents):
             agent.name = 'agent %d' % i
-            agent.movable = True
-            agent.size = 0.10
+            agent.size = 0.50
             agent.color = (255, 0, 255)
         # add tasks
-        self.tasks = [Task(buyer=Buyer(), merchant=Merchant())
-                      for _ in range(args.num_tasks)]
+        self.tasks = [Task(buyer=Person(), merchant=Person()) for _ in range(args.num_tasks)]
         for i, task in enumerate(self.tasks):
             task.name = '%d' % i
             task.buyer.name = 'buyer %d' % i
-            task.buyer.movable = False
+            task.buyer.size = 0.20
             task.buyer.color = (255, 204, 153)
             task.merchant.name = 'merchant %d' % i
-            task.merchant.movable = False
+            task.merchant.size = 0.20
             task.merchant.color = (153, 153, 255)
+        # add barriers
+        self.barriers = [Stone() for _ in range(args.num_barriers)]
+        for i, barrier in enumerate(self.barriers):
+            barrier.name = '%d' % i
+            barrier.size = 0.30
+            barrier.color = (0, 0, 0)
         # position dimensionality
         self.dim_p = 2
         # simulation timestep
@@ -37,30 +41,37 @@ class Scenario:
         # make initial conditions
         self.reset()
 
-    @property
-    def entities(self):
-        return self.agents
-
     def reset(self):
         self.clock = 0
+        poses = []
         # random properties for agents
         for i, agent in enumerate(self.agents):
             agent.clear()
-            agent.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
-            agent.state.p_vel = np.zeros(self.dim_p)
+            pos = np.random.uniform(*self.range_p, self.dim_p)
+            agent.set_state(pos=pos, vel=np.zeros(self.dim_p))
             agent.pre_update()
-            agent.tasks = []
-        # random properties for landmarks
+            poses.append(pos)
+        # random properties for tasks
         for i, task in enumerate(self.tasks):
-            task.agent = None
-            buyer = task.buyer
-            buyer.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
-            buyer.state.p_vel = np.zeros(self.dim_p)
-            buyer.occupied = False
-            merchant = task.merchant
-            merchant.state.p_pos = np.random.uniform(*self.range_p, self.dim_p)
-            merchant.state.p_vel = np.zeros(self.dim_p)
-            merchant.occupied = False
+            task.clear()
+            pos = np.random.uniform(*self.range_p, self.dim_p)
+            task.buyer.set_state(pos=pos)
+            poses.append(pos)
+            pos = np.random.uniform(*self.range_p, self.dim_p)
+            task.merchant.set_state(pos=pos)
+            poses.append(pos)
+        # random properties for barriers
+        for i, barrier in enumerate(self.barriers):
+            while True:
+                pos = np.random.uniform(*self.range_p, self.dim_p)
+                okay = True
+                for pos1 in poses:
+                    if distance(pos, pos1) < 1.0:
+                        okay = False
+                        break
+                if okay:
+                    barrier.set_state(pos=pos)
+                    break
         return np.array([self.observation(agent) for agent in self.agents])
 
     def task_assignment(self, scheme):
@@ -83,7 +94,7 @@ class Scenario:
                 continue
 
             p = task.buyer if task.is_picked() else task.merchant
-            d = p.occupied
+            d = p.occupied is not None
             if not d:
                 dist = distance(p.state.p_pos, pos)
                 if dist < (p.size + agent.size):
@@ -125,13 +136,13 @@ class Scenario:
                 continue
             # merchants' relative position
             m = task.merchant
-            if m.occupied:
+            if m.occupied is not None:
                 entity_pos.append(np.zeros(self.dim_p))
             else:
                 entity_pos.append(m.state.p_pos - agent.state.p_pos)
             # buyers' relative position
             b = task.buyer
-            if b.occupied:
+            if b.occupied is not None:
                 entity_pos.append(np.zeros(self.dim_p))
             else:
                 entity_pos.append(b.state.p_pos - agent.state.p_pos)
@@ -142,13 +153,28 @@ class Scenario:
             other_pos.append(other.state.p_pos - agent.state.p_pos)
         return np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos)
 
+    def repair_tasks(self):
+        for task in self.tasks:
+            if not task.is_finished():
+                continue
+            task.clear()
+            task.buyer.set_state(
+                pos=np.random.uniform(*self.range_p, self.dim_p),
+                vel=np.zeros(self.dim_p)
+            )
+            task.merchant.set_state(
+                pos=np.random.uniform(*self.range_p, self.dim_p),
+                vel=np.zeros(self.dim_p)
+            )
+
     # update state of the world
     def step(self, action_n, **kwargs):
         self.clock += 1
+        self.repair_tasks()
         # set action for each agent
         obs_n, reward_n, done_n = [], [], []
         for i, agent in enumerate(self.agents):
-            if agent.empty():
+            if agent.is_empty():
                 continue
             agent.pre_update()
             self.__set_action(action_n[i], agent, **kwargs)
@@ -187,10 +213,34 @@ class Scenario:
         noise = np.random.randn(*agent.action.shape) * agent.u_noise if agent.u_noise else 0.0
         p_force = agent.action + noise
 
-        agent.state.p_vel = agent.state.p_vel * (1 - self.damping)
-        agent.state.p_vel += (p_force / agent.mass) * self.dt
+        p_vel = agent.state.p_vel * (1 - self.damping)
+        p_vel += (p_force / agent.mass) * self.dt
         if agent.max_speed is not None:
-            speed = np.sqrt(np.square(agent.state.p_vel[0]) + np.square(agent.state.p_vel[1]))
+            speed = np.sqrt(np.square(p_vel[0]) + np.square(p_vel[1]))
             if speed > agent.max_speed:
-                agent.state.p_vel = agent.state.p_vel / speed * agent.max_speed
-        agent.state.p_pos += agent.state.p_vel * self.dt
+                p_vel = p_vel / speed * agent.max_speed
+        p_pos = agent.state.p_pos + p_vel * self.dt
+        if not (self.range_p[0] < p_pos[0] < self.range_p[1]):
+            return
+        if not (self.range_p[0] < p_pos[1] < self.range_p[1]):
+            return
+        for entity in self.barriers+self.agents:
+            if entity == agent:
+                continue
+            if distance(p_pos, entity.state.p_pos) <= (agent.size+entity.size):
+                return
+        agent.state.p_vel = p_vel[:]
+        agent.state.p_pos = p_pos[:]
+
+    # def __apply_action(self, agent):
+    #     # set applied forces
+    #     noise = np.random.randn(*agent.action.shape) * agent.u_noise if agent.u_noise else 0.0
+    #     p_force = agent.action + noise
+    #
+    #     agent.state.p_vel = agent.state.p_vel * (1 - self.damping)
+    #     agent.state.p_vel += (p_force / agent.mass) * self.dt
+    #     if agent.max_speed is not None:
+    #         speed = np.sqrt(np.square(agent.state.p_vel[0]) + np.square(agent.state.p_vel[1]))
+    #         if speed > agent.max_speed:
+    #             agent.state.p_vel = agent.state.p_vel / speed * agent.max_speed
+    #     agent.state.p_pos += agent.state.p_vel * self.dt

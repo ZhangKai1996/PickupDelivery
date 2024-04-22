@@ -84,11 +84,11 @@ class HieTrainer:
             )
             print()
 
-    def select_scheme(self, state, t, **kwargs):
-        return self.meta_controller.act(state, t, **kwargs)
+    def select_scheme(self, state, **kwargs):
+        return self.meta_controller.act(state, **kwargs)
 
-    def select_action(self, state, t, **kwargs):
-        return self.controller.act(state, t, **kwargs)
+    def select_action(self, state, **kwargs):
+        return self.controller.act(state, **kwargs)
 
     def add(self, *args, label='ctrl'):
         if label == 'ctrl':

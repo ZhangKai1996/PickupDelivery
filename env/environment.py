@@ -45,24 +45,6 @@ class CityEnv(gym.Env):
     def reset(self, **kwargs):
         return self.scenario.reset()
 
-    def _set_action(self, action, agent):
-        agent.action = np.zeros(self.scenario.dim_p)
-        if agent.movable:
-            # physical action
-            if self.force_discrete_action:
-                d = np.argmax(action)
-                action[:] = 0.0
-                action[d] = 1.0
-            if self.discrete_action_space:
-                agent.action[0] += action[1] - action[2]
-                agent.action[1] += action[3] - action[4]
-            else:
-                agent.action = action
-            sensitivity = 5.0
-            if agent.accel is not None:
-                sensitivity = agent.accel
-            agent.action *= sensitivity
-
     def step(self, action_n):
         # advance scenario state
         return self.scenario.step(
