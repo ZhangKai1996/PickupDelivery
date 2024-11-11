@@ -3,44 +3,28 @@ from tqdm import tqdm
 import numpy as np
 
 from env.environment import CityEnv
-from env.utils import one_hot
 from algo.framework import HieTrainer
 from train import parse_args, make_exp_id
 
 
-def fixed_scheme(obs_n, num_tasks):
-    scheme_idx, num_agents = [], len(obs_n)
-    for i in range(num_tasks):
-        scheme_idx.append(i % num_agents)
-    np.random.shuffle(scheme_idx)
-    num = np.random.randint(0, 4)
-    scheme = []
-    for i in range(num_tasks):
-        scheme.append(one_hot(scheme_idx[i]+1, num=num_agents))
-    scheme = np.stack(scheme)
-    return scheme
-
-
-def test(env, trainer, num_steps):
+def test(env, trainer, num_steps, num_tasks):
     obs_n, done = env.reset(), False
+    scheme = np.array([[1.0] for _ in range(num_tasks)])
+    env.task_assignment(scheme, test=True)
 
     rew_sum = 0.0
     for step in tqdm(range(1, num_steps + 1), desc='Testing'):
-        obs_n_meta = env.observation_meta()
-        scheme = trainer.select_scheme(obs_n_meta, t=step)
-        # scheme = fixed_scheme(obs_n, num_tasks)   # fixed scheme
-        env.task_assignment(scheme)
-
-        act_n = trainer.select_action(obs_n, t=step)
-        # Step the env and return outputs
-        next_obs_n, rew_n, _, _ = env.step(act_n)
+        act_n = trainer.select_action(obs_n)
+        next_obs_n, rew_n, done_n, _ = env.step(act_n, test=True)
         env.render(
             mode='Step:{}'.format(step),
             show=True
         )
-        time.sleep(0.1)
+        # time.sleep(0.1)
         rew_sum += sum(rew_n)
         obs_n = next_obs_n
+        if any(done_n):
+            break
     print('Rew:{:>+6.2f}'.format(rew_sum))
 
 
@@ -66,7 +50,12 @@ def main():
     )
     trainer.load_model()
     # Train with interaction.
-    test(env=env, trainer=trainer, num_steps=int(1e5))
+    test(
+        env=env,
+        trainer=trainer,
+        num_steps=int(1e5),
+        num_tasks=args.num_tasks
+    )
     env.close()
 
 

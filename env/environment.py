@@ -36,8 +36,8 @@ class CityEnv(gym.Env):
         self.scenario = scenario
         self.cv_render = None
 
-    def task_assignment(self, scheme):
-        self.scenario.task_assignment(scheme)
+    def task_assignment(self, scheme, **kwargs):
+        self.scenario.task_assignment(scheme, **kwargs)
 
     def observation_meta(self):
         return self.scenario.observation_meta()
@@ -45,12 +45,13 @@ class CityEnv(gym.Env):
     def reset(self, **kwargs):
         return self.scenario.reset()
 
-    def step(self, action_n):
+    def step(self, action_n, **kwargs):
         # advance scenario state
         return self.scenario.step(
             action_n=action_n,
             force_discrete_action=self.force_discrete_action,
-            discrete_action_space=self.discrete_action_space
+            discrete_action_space=self.discrete_action_space,
+            **kwargs
         )
 
     def render(self, **kwargs):

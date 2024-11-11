@@ -26,8 +26,8 @@ class Critic(nn.Module):
 class Actor(nn.Module):
     def __init__(self, dim_obs, dim_act, activate='tanh'):
         super(Actor, self).__init__()
-        self.FC1 = nn.Linear(dim_obs[0], 512)
-        self.FC2 = nn.Linear(512, 128)
+        self.FC1 = nn.Linear(dim_obs[0], 256)
+        self.FC2 = nn.Linear(256, 128)
         self.FC3 = nn.Linear(128, dim_act)
         if activate == 'tanh':
             self.activate = F.tanh

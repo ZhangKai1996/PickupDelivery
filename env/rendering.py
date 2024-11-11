@@ -12,7 +12,7 @@ def make_random_color():
 
 
 class CVRender:
-    def __init__(self, env, width=1200, height=1200):
+    def __init__(self, env, width=1200, height=1200, side=400):
         self.env = env
         self.width = width
         self.height = height
@@ -20,13 +20,13 @@ class CVRender:
         self.video = cv2.VideoWriter(
             'trained/pickup_delivery.avi',
             cv2.VideoWriter_fourcc(*'MJPG'),
-            30, (self.width+300, self.height)
+            30, (self.width+side, self.height)
         )
 
         self.base_img = None
         self.make_base_img()
-        self.side_bar = np.ones((self.height, 300, 3), np.uint8) * 255
-        cv2.rectangle(self.side_bar, (0, 0), (300, self.height), color=(0, 0, 0), thickness=1)
+        self.side_bar = np.ones((self.height, side, 3), np.uint8) * 255
+        cv2.rectangle(self.side_bar, (0, 0), (side, self.height), color=(0, 0, 0), thickness=1)
         # cv2.imwrite('trained/base_image.png', self.base_img)
 
     def make_base_img(self):
@@ -93,6 +93,12 @@ class CVRender:
         # Drones
         text_pos = [20, 70]
         for i, agent in enumerate(scenario.agents):
+            seq_lst = scenario.sequence[i]
+            for j, pos in enumerate(seq_lst[:-1]):
+                pos1 = self.transform(pos=pos)
+                pos2 = self.transform(pos=seq_lst[j+1])
+                cv2.line(base_img, pos1, pos2, (0, 255, 0), thickness=1)
+
             text_pos = self.__draw_agent(
                 agent, base_img, side_bar,
                 delta, text_pos, text_args

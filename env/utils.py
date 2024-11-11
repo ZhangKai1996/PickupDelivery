@@ -68,3 +68,15 @@ def region_segmentation(kwargs: dict, size: int, radius: float):
                 break
         pos_dict[key] = poses
     return pos_dict
+
+
+def random_generator(poses, range_p, dim_p, size=1.0):
+    while True:
+        pos = np.random.uniform(*range_p, dim_p)
+        okay = True
+        for pos1 in poses:
+            if distance(pos, pos1) < size:
+                okay = False
+                break
+        if okay:
+            return pos

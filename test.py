@@ -14,27 +14,28 @@ def train(env, trainer, num_episodes, max_episode_len, num_tasks):
 
     for episode in range(1, num_episodes + 1):
         obs_n, done = env.reset(), False
-        obs_n_meta = env.observation_meta()
-        scheme = trainer.select_scheme(obs_n_meta, t=episode)
+        # obs_n_meta = env.observation_meta()
+        # scheme = trainer.select_scheme(obs_n_meta, t=episode)
         # scheme = fixed_scheme(obs_n, num_tasks)  # fixed scheme
-        env.task_assignment(scheme)
+        scheme = np.array([[1.0] for _ in range(num_tasks)])
+        env.task_assignment(scheme, test=True)
 
         episode_step = 0
         rew_sum = []
         while True:
             step += 1
             episode_step += 1
-            act_n = trainer.select_action(obs_n, t=step)
+            act_n = trainer.select_action(obs_n)
             # Step the env and return outputs
-            next_obs_n, rew_n, done_n, _ = env.step(act_n)
-            done = all(done_n)
+            next_obs_n, rew_n, done_n, _ = env.step(act_n, test=True)
+            done = any(done_n)
             terminal = done or episode_step >= max_episode_len
             env.render(
                 mode='Episode:{}, Step:{}'.format(episode, episode_step),
                 clear=terminal,
                 show=True
             )
-            time.sleep(0.1)
+            # time.sleep(0.1)
             rew_sum.append(rew_n)
             obs_n = next_obs_n
             if terminal:
@@ -42,7 +43,6 @@ def train(env, trainer, num_episodes, max_episode_len, num_tasks):
         # print(ctrl_step, rew_sum)
         mean_rew_epi = np.sum(rew_sum, axis=0)
         rew_stats.append(mean_rew_epi)
-        sr_stats.append(int(done))
         print('Episode:{:>5d}, Step:{:>7d}, Done:{}'.format(
             episode, step, int(done)), end=', '
         )
@@ -52,7 +52,7 @@ def train(env, trainer, num_episodes, max_episode_len, num_tasks):
     mean_rew = np.mean(rew_stats, axis=0)
     for i, r in enumerate(mean_rew):
         print('Rew_{}:{:>+7.2f}'.format(i, r), end=', ')
-    print('Rew: {:>7.2f},SR:{:>3.2f}'.format(sum(mean_rew), np.mean(sr_stats)))
+    print('Rew: {:>7.2f}, SR:{:>5.3f}'.format(sum(mean_rew), np.mean(sr_stats)))
 
 
 def main():
@@ -79,7 +79,7 @@ def main():
     train(
         env=env,
         trainer=trainer,
-        num_episodes=1000,
+        num_episodes=int(1e3),
         max_episode_len=args.max_episode_len,
         num_tasks=args.num_tasks
     )

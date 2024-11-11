@@ -81,19 +81,22 @@ class Agent(Entity):
         # physical motor noise amount
         self.u_noise = None
         # control range
-        self.u_range = 5.0
+        self.u_range = 2.0
         # action
         self.action = None
         # tasks
         self.tasks = []
         # endurance
         self.dist = 0.0
+        self.shortest_dist = 0.0
         # mass
         self.initial_mass = 1.0
 
     def status(self):
-        return '>>>{}: ({},{}), ({:>6.3f})'.format(
-            self.name, self.initial_mass, self.mass, self.dist
+        return '>>>{}: ({},{}), ({:>6.2f},{:>6.2f})'.format(
+            self.name,
+            self.initial_mass, self.mass,
+            self.dist, self.shortest_dist
         )
 
     def pre_update(self):

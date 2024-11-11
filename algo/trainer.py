@@ -22,7 +22,7 @@ class Controller(Trainer):
         self.dim_obs = dim_obs
 
         self.kwargs = kwargs
-        self.schedule = LinearSchedule(200000, 0.1, 1)
+        self.schedule = LinearSchedule(int(1e7), 0.1, 1)
         self.memory = ReplayMemory(kwargs['memory_length'])
 
         self.actors, self.critics = [], []
@@ -60,20 +60,16 @@ class Controller(Trainer):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
     def act(self, obs_n, t=None):
-        if t is not None:
-            decay = np.random.random() <= self.schedule.value(t)
-        else:
-            decay = False
-
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):
             obs = obs_n[i, :].detach().unsqueeze(0)
-            act = self.actors[i](obs).squeeze()
-            if decay:
-                act += th.from_numpy(np.random.randn(self.n_actions)).type(FloatTensor)
-                act = th.clamp(act, -1.0, 1.0)
-            act_n[i, :] = act
+            act_n[i, :] = self.actors[i](obs).squeeze()
+
+        if t is not None and np.random.random() <= self.schedule.value(t):
+            act_noise = np.random.uniform(size=act_n.shape)
+            act_n += th.from_numpy(act_noise).type(FloatTensor)
+            act_n = th.clamp(act_n, -1.0, 1.0)
         return act_n.data.cpu().numpy()
 
     def update(self, t):
@@ -166,20 +162,17 @@ class MetaController(Trainer):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
     def act(self, obs_n, t=None):
-        if t is not None:
-            decay = np.random.random() <= self.schedule.value(t)
-        else:
-            decay = False
-
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):
             obs = obs_n[i, :].detach().unsqueeze(0)
-            act = self.actors[i](obs).squeeze()
-            if decay:
-                act += th.from_numpy(np.random.randn(self.n_actions)).type(FloatTensor)
-                act = th.softmax(act, dim=0)
-            act_n[i, :] = act
+            act_n[i, :] = self.actors[i](obs).squeeze()
+
+        if t is not None and np.random.random() <= self.schedule.value(t):
+            act_noise = np.random.uniform(self.n_agents, self.n_actions)
+            act_n += th.from_numpy(act_noise).type(FloatTensor)
+            act_n = th.softmax(act_n, dim=0)
+            print(act_n.shape)
         return act_n.data.cpu().numpy()
 
     def update(self, t):
