@@ -1,7 +1,9 @@
 import numpy as np
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim import Adam
+from torch.autograd import Variable
 
 from .memory import ReplayMemory
 from .network import Critic, Actor
@@ -12,6 +14,25 @@ class Trainer:
     def act(self, obs_n, t): pass
     def update(self, t): pass
     def close(self): pass
+
+
+def onehot_from_logit(logit):
+    return F.one_hot(logit.argmax(dim=-1), num_classes=logit.shape[-1])
+
+
+def sample_gumbel(shape, eps=1e-20, tens_type=th.FloatTensor):
+    """Sample from Gumbel(0, 1)"""
+    u = Variable(tens_type(*shape).uniform_(), requires_grad=False)
+    return -th.log(-th.log(u + eps) + eps)
+
+
+def gumbel_softmax(logit, temperature=1.0, hard=False):
+    y = logit + sample_gumbel(logit.shape, tens_type=type(logit.data))
+    y = F.softmax(y / temperature, dim=-1)
+    if hard:
+        y_hard = onehot_from_logit(y)
+        y = (y_hard - y).detach() + y
+    return y
 
 
 class Controller(Trainer):
@@ -60,16 +81,15 @@ class Controller(Trainer):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
     def act(self, obs_n, t=None):
+        explore = t is not None and np.random.random() <= self.schedule.value(t)
+
         obs_n = th.from_numpy(obs_n).type(FloatTensor)
         act_n = th.zeros(self.n_agents, self.n_actions)
         for i in range(self.n_agents):
             obs = obs_n[i, :].detach().unsqueeze(0)
             act_n[i, :] = self.actors[i](obs).squeeze()
 
-        if t is not None and np.random.random() <= self.schedule.value(t):
-            act_noise = np.random.uniform(size=act_n.shape)
-            act_n += th.from_numpy(act_noise).type(FloatTensor)
-            act_n = th.clamp(act_n, -1.0, 1.0)
+        act_n = gumbel_softmax(act_n, hard=True) if explore else onehot_from_logit(act_n)
         return act_n.data.cpu().numpy()
 
     def update(self, t):
@@ -91,7 +111,9 @@ class Controller(Trainer):
 
             self.critics_optimizer[i].zero_grad()
             current_q = self.critics[i](state_batch, action_batch)
-            n_actions = [self.actors_target[i](n_states_batch[:, i, :]) for i in range(self.n_agents)]
+
+            n_actions = [onehot_from_logit(self.actors_target[j](n_states_batch[:, i, :]))
+                         for j in range(self.n_agents)]
             n_actions = th.stack(n_actions, dim=1)
             target_next_q = self.critics_target[i](n_states_batch, n_actions)
             target_q = target_next_q * gamma * (1 - done_batch[:, i, :]) + reward_batch[:, i, :]
@@ -101,7 +123,12 @@ class Controller(Trainer):
 
             self.actors_optimizer[i].zero_grad()
             ac = action_batch.clone()
-            ac[:, i, :] = self.actors[i](state_batch[:, i, :])
+            ac[:, i, :] = gumbel_softmax(self.actors[i](state_batch[:, i, :]), hard=True)
+            for j in range(self.n_agents):
+                if j == i:
+                    continue
+                ac[:, j, :] = onehot_from_logit(self.actors[j](state_batch[:, j, :]))
+
             loss_p = -self.critics[i](state_batch, ac).mean()
             loss_p.backward()
             self.actors_optimizer[i].step()
@@ -130,9 +157,9 @@ class MetaController(Trainer):
         self.actors_optimizer, self.critics_optimizer = [], []
         for i in range(n_agents):
             # Actor and target actor
-            actor = Actor(dim_obs, dim_act, activate='softmax')
+            actor = Actor(dim_obs, dim_act)
             self.actors.append(actor)
-            actor_target = Actor(dim_obs, dim_act, activate='softmax')
+            actor_target = Actor(dim_obs, dim_act)
             actor_target.load_state_dict(actor.state_dict())
             self.actors_target.append(actor_target)
             self.actors_optimizer.append(Adam(actor.parameters(), lr=kwargs['a_lr']))
@@ -169,10 +196,9 @@ class MetaController(Trainer):
             act_n[i, :] = self.actors[i](obs).squeeze()
 
         if t is not None and np.random.random() <= self.schedule.value(t):
-            act_noise = np.random.uniform(self.n_agents, self.n_actions)
+            act_noise = np.random.normal(size=(self.n_agents, self.n_actions))
             act_n += th.from_numpy(act_noise).type(FloatTensor)
-            act_n = th.softmax(act_n, dim=0)
-            print(act_n.shape)
+            act_n = th.softmax(act_n, dim=-1)
         return act_n.data.cpu().numpy()
 
     def update(self, t):

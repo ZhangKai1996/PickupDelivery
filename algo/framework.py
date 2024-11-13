@@ -10,10 +10,10 @@ from algo.visual import net_visual
 
 
 class HieTrainer:
-    def __init__(self, env, num_tasks, num_agents, folder=None, test=False, **kwargs):
+    def __init__(self, env, num_orders, num_agents, folder=None, test=False, **kwargs):
         # Construct meta-controller and controller
         self.meta_controller = MetaController(
-            num_tasks,
+            num_orders,
             env.obs_space_meta.shape,
             env.act_space_meta.n,
             **kwargs

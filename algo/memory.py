@@ -2,7 +2,8 @@ import numpy as np
 import random
 from collections import namedtuple
 
-Experience = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'done'))
+Experience = namedtuple('Transition',
+                        ('state', 'action', 'next_state', 'reward', 'done'))
 
 
 class ReplayMemory(object):

@@ -19,17 +19,30 @@ def which_figure(min_v=1, max_v=4, p=0.8):
     return k
 
 
-def distance(p1, p2):
-    return math.sqrt(
-        math.pow(p2[0] - p1[0], 2) + math.pow(p2[1] - p1[1], 2)
-    )
+def state2coord(state, size, reg=False):
+    x = state // size
+    y = state % size
+    if reg:
+        return [float(x)/size, float(y)/size]
+    return [x, y]
+
+
+def coord2state(coord, size):
+    return coord[0] * size + coord[1]
+
+
+def distance(p1, p2, size=None):
+    if size is not None:
+        p1 = state2coord(p1, size)
+        p2 = state2coord(p2, size)
+    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
 
 def border_func(x, min_v=0.0, max_v=1.0, d_type=float):
     """
     与最大值取较小者，与最小值取较大者，返回值的类型取决于d_type。
     """
-    print(x, min_v, max_v, d_type)
+    # print(x, min_v, max_v, d_type)
     return d_type(min(max(x, min_v), max_v))
 
 
@@ -50,33 +63,3 @@ def is_overlap(pos1: tuple, pos2: tuple, delta=(0.0, 0.0)):
         return False
     return True
 
-
-def region_segmentation(kwargs: dict, size: int, radius: float):
-    pos_dict, check_list = {}, []
-    for key, num in kwargs.items():
-        poses = set()
-        while True:
-            pos = tuple(np.random.uniform(0, size, size=(2,)))
-            for pos1 in check_list:
-                if is_overlap(pos, pos1, delta=(radius, radius)):
-                    break
-            else:
-                poses.add(pos)
-                check_list.append(pos)
-
-            if len(poses) >= num:
-                break
-        pos_dict[key] = poses
-    return pos_dict
-
-
-def random_generator(poses, range_p, dim_p, size=1.0):
-    while True:
-        pos = np.random.uniform(*range_p, dim_p)
-        okay = True
-        for pos1 in poses:
-            if distance(pos, pos1) < size:
-                okay = False
-                break
-        if okay:
-            return pos

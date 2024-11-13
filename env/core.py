@@ -3,61 +3,38 @@ from copy import deepcopy
 from env.utils import distance
 
 
-# physical/external base state of all entities
-class EntityState(object):
-    def __init__(self):
-        # physical position
-        self.p_pos = None
-        # physical velocity
-        self.p_vel = None
-
-    def set(self, other):
-        self.p_pos = deepcopy(other.p_pos)
-        self.p_vel = deepcopy(other.p_vel)
-
-    def clear(self):
-        self.p_pos = None
-        self.p_vel = None
-
-
 # properties and state of physical world entity
 class Entity(object):
-    def __init__(self, name='', size=0.05, movable=False, color=(0.0, 0.0, 0.0)):
-        # name
+    def __init__(self, name='', movable=False):
         self.name = name
-        # properties:
-        self.size = size
-        # entity can move / be pushed
         self.movable = movable
-        # material density (affects mass)
-        self.density = 25.0
-        # color
-        self.color = color
-        # max speed and accel
-        self.max_speed = None
-        self.accel = None
-        # state
-        self.state = EntityState()
-        self.last_state = EntityState()
 
-    def set_state(self, pos=None, vel=None):
-        self.state.p_pos = pos
-        self.state.p_vel = vel
+        self.state = None
+        self.last_state = None
+
+    def set_state(self, state):
+        self.state = deepcopy(state)
+
+    def set_last_state(self, state):
+        self.last_state = deepcopy(state)
 
     def clear(self):
-        self.state = EntityState()
-        self.last_state = EntityState()
+        self.state = None
+        self.last_state = None
 
 
 # properties of landmark entities
-class Person(Entity):
+class Destination(Entity):
     def __init__(self, **kwargs):
-        super(Person, self).__init__(**kwargs)
+        super(Destination, self).__init__(**kwargs)
         self.movable = False
         self.occupied = None
 
     def update(self, clock):
         self.occupied = clock
+
+    def is_occupied(self):
+        return self.occupied is not None
 
     def clear(self):
         super().clear()
@@ -78,56 +55,37 @@ class Agent(Entity):
     def __init__(self, **kwargs):
         super(Agent, self).__init__(**kwargs)
         self.movable = True
-        # physical motor noise amount
-        self.u_noise = None
-        # control range
-        self.u_range = 2.0
-        # action
-        self.action = None
-        # tasks
-        self.tasks = []
-        # endurance
+        self.orders = []
         self.dist = 0.0
-        self.shortest_dist = 0.0
-        # mass
-        self.initial_mass = 1.0
 
     def status(self):
-        return '>>>{}: ({},{}), ({:>6.2f},{:>6.2f})'.format(
-            self.name,
-            self.initial_mass, self.mass,
-            self.dist, self.shortest_dist
-        )
-
-    def pre_update(self):
-        self.last_state.set(other=self.state)
+        return '>>>{}: ({},{:>6.2f})'.format(self.name, self.mass, self.dist)
 
     def update(self):
-        self.dist += distance(self.last_state.p_pos, self.state.p_pos)
+        if self.last_state is None:
+            return
+        self.dist += distance(self.last_state, self.state)
 
     def is_empty(self):
-        if len(self.tasks) <= 0:
+        if len(self.orders) <= 0:
             return True
-        return all([task.is_finished() for task in self.tasks])
+        return all([task.is_finished() for task in self.orders])
 
     @property
     def mass(self):
-        m = self.initial_mass
-        for task in self.tasks:
-            if task.is_finished():
-                continue
-            if task.is_picked():
-                m += task.mass
-        return m
+        mass = 0
+        for order in self.orders:
+            if order.is_finished(): continue
+            if order.is_picked(): mass += 1
+        return mass
 
     def clear(self):
         super().clear()
         self.dist = 0.0
-        self.tasks = []
-        self.action = None
+        self.orders = []
 
 
-class Task:
+class Order:
     def __init__(self, name='', buyer=None, merchant=None, clock=0):
         self.name = name
         self.clock = clock
