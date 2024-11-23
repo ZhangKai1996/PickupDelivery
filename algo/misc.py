@@ -8,13 +8,13 @@ FloatTensor = th.FloatTensor if not th.cuda.is_available() else th.cuda.FloatTen
 ByteTensor = th.ByteTensor if not th.cuda.is_available() else th.cuda.ByteTensor
 
 
-def get_folder(folder, root='trained', makedir=True, allow_exist=True):
+def get_folder(folder, root='trained', makedir=True):
     """
     数据记录（计算图、logs和网络参数）的保存文件路径
     """
     folder = os.path.join(root, folder)
     if os.path.exists(folder):
-        if not allow_exist:
+        if makedir:
             shutil.rmtree(folder)
             print('Removing all previous files!')
 

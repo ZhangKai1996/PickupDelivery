@@ -1,4 +1,5 @@
 import gym
+import numpy as np
 from gym import spaces
 
 from env.core import Agent, Order, Destination, Stone
@@ -24,9 +25,9 @@ class CityEnv(gym.Env):
 
         # configure spaces
         self.act_space_meta = spaces.Discrete(args.num_agents)
-        self.obs_space_meta = spaces.Box(low=-1, high=+1, shape=(180,), dtype=np.float32)
+        self.obs_space_meta = spaces.Box(low=-1, high=+1, shape=(12,), dtype=np.float32)
         self.act_space_ctrl = spaces.Discrete(4)
-        self.obs_space_ctrl = spaces.Box(low=-1, high=+1, shape=(180,), dtype=np.float32)
+        self.obs_space_ctrl = spaces.Box(low=-1, high=+1, shape=(12,), dtype=np.float32)
 
         self.cv_render = None
 
@@ -106,7 +107,7 @@ class CityEnv(gym.Env):
                 return -100.0, False, True
 
         # Agent are rewarded based on minimum agent distance to each landmark
-        done, rew, dists = [], -1.0, []
+        done, rew, dists = [], 0.0, []
         for order in agent.orders:
             if order.is_finished():
                 done.append(True)
@@ -116,17 +117,18 @@ class CityEnv(gym.Env):
                 dist = distance(order.merchant.state, agent.state)
                 if dist <= 0:
                     order.merchant.update(clock=self.clock)
-                    rew = +100.0
+                    rew = 1.0
                 dists.append(dist)
             else:
                 dist = distance(order.buyer.state, agent.state)
                 if dist <= 0:
                     order.buyer.update(clock=self.clock)
-                    rew = +100.0
+                    rew = 1.0
                 dists.append(dist)
             done.append(order.is_finished())
 
-        # if rew <= 0.0 and len(dists) > 0: rew -= min(dists) * 0.1
+        if all(done): rew = +100.0
+        if rew <= 0.0 and len(dists) > 0: rew -= min(dists) * 0.1
         return rew, all(done), False
 
     def observation_meta(self):
@@ -146,14 +148,22 @@ class CityEnv(gym.Env):
         # get positions of all entities in this agent's reference frame
         entity_pos = []
         for order in agent.orders:
-            entity_pos.append(list(order.merchant.state - pos) + [1-float(order.merchant.occupied is not None), ])
-            entity_pos.append(list(order.buyer.state - pos) + [1-float(order.buyer.occupied is not None), ])
+            if order.is_finished():
+                entity_pos.append(np.zeros((self.dim_p + 1, )))
+                entity_pos.append(np.zeros((self.dim_p + 1,)))
+                continue
+
+            if not order.is_picked():
+                entity_pos.append(list(order.merchant.state - pos) + [float(order.merchant.occupied is not None), ])
+                entity_pos.append(np.zeros((self.dim_p + 1,)))
+            else:
+                entity_pos.append(np.zeros((self.dim_p + 1,)))
+                entity_pos.append(list(order.buyer.state - pos) + [float(order.buyer.occupied is not None), ])
 
         # communication of all other agents
         other_pos = [other.state - pos for other in self.agents if other != agent]
         stone_pos = [stone.state - pos for stone in self.stones]
-        output = np.concatenate(entity_pos + other_pos + stone_pos)
-        return output
+        return np.concatenate(entity_pos + other_pos + stone_pos)
 
     def task_assignment(self, scheme, **kwargs):
         scheme = np.argmax(scheme, axis=1)
