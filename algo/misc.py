@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import torch as th
 
@@ -7,35 +8,25 @@ FloatTensor = th.FloatTensor if not th.cuda.is_available() else th.cuda.FloatTen
 ByteTensor = th.ByteTensor if not th.cuda.is_available() else th.cuda.ByteTensor
 
 
-def get_folder(folder, root='trained', has_log=True, has_graph=True, has_model=True, makedir=True, allow_exist=False):
+def get_folder(folder, root='trained', makedir=True, allow_exist=True):
     """
     数据记录（计算图、logs和网络参数）的保存文件路径
     """
     folder = os.path.join(root, folder)
     if os.path.exists(folder):
         if not allow_exist:
-            raise FileExistsError
+            shutil.rmtree(folder)
+            print('Removing all previous files!')
 
-    if has_log:
-        log_path = os.path.join(folder, 'logs/')
-        if not os.path.exists(log_path) and makedir:
-            os.makedirs(log_path)
-    else:
-        log_path = None
-
-    if has_graph:
-        graph_path = os.path.join(folder, 'graph/')
-        if not os.path.exists(graph_path) and makedir:
-            os.makedirs(graph_path)
-    else:
-        graph_path = None
-
-    if has_model:
-        model_path = os.path.join(folder, 'model/')
-        if not os.path.exists(model_path) and makedir:
-            os.makedirs(model_path)
-    else:
-        model_path = None
+    log_path = os.path.join(folder, 'logs/')
+    if not os.path.exists(log_path) and makedir:
+        os.makedirs(log_path)
+    graph_path = os.path.join(folder, 'graph/')
+    if not os.path.exists(graph_path) and makedir:
+        os.makedirs(graph_path)
+    model_path = os.path.join(folder, 'model/')
+    if not os.path.exists(model_path) and makedir:
+        os.makedirs(model_path)
 
     return {'folder': folder,
             'log_path': log_path,

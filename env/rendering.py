@@ -40,7 +40,7 @@ text_kwargs2 = dict(
 
 
 class EnvRender:
-    def __init__(self, env, width=1200, height=1200, padding=0.04):
+    def __init__(self, env, width=2525, height=2525, padding=0.01):
         self.env = env
         self.width = width
         self.height = height
@@ -87,7 +87,7 @@ class EnvRender:
         self.__draw_agents(size, color=(255, 0, 0), traj=False)
         self.__draw_stones(size)
         self.__draw_orders(size)
-        # cv2.imwrite('trained/base_image.png', self.base_img)
+        cv2.imwrite('trained/base_image.png', self.base_img)
 
     def __draw_agents(self, size, color=None, traj=True):
         if color is None: color = (0, 0, 255)
@@ -142,7 +142,7 @@ class EnvRender:
 
         if show:
             cv2.imshow('basic image', base_img)
-            if cv2.waitKey(1) == 113:
+            if cv2.waitKey(0) == 113:
                 cv2.destroyAllWindows()
         self.video.write(base_img)
 

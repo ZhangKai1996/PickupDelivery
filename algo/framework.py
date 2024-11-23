@@ -112,13 +112,13 @@ class HieTrainer:
             self.scalars(
                 key=prefix + '_critic_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)},
-                episode=t
+                step=t
             )
             mean_a_loss = np.mean(self.ctrl_a_losses, axis=0)
             self.scalars(
                 key=prefix + '_actor_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)},
-                episode=t
+                step=t
             )
             self.ctrl_c_losses, self.ctrl_a_losses = [], []
 
@@ -135,13 +135,13 @@ class HieTrainer:
             self.scalars(
                 key=prefix + '_critic_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)},
-                episode=t
+                step=t
             )
             mean_a_loss = np.mean(self.meta_a_losses, axis=0)
             self.scalars(
                 key=prefix + '_actor_loss',
                 value={'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)},
-                episode=t
+                step=t
             )
             self.meta_c_losses, self.meta_a_losses = [], []
 
@@ -159,15 +159,15 @@ class HieTrainer:
                 c.load_state_dict(c_state_dict)
                 self.controller.actors_target[i] = deepcopy(a)
                 self.controller.critics_target[i] = deepcopy(c)
-            prefix = 'meta'
-            iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
-            for i, (a, c) in enumerate(iterator):
-                a_state_dict = th.load(load_path + prefix + '_actor_{}.pth'.format(i)).state_dict()
-                c_state_dict = th.load(load_path + prefix + '_critic_{}.pth'.format(i)).state_dict()
-                a.load_state_dict(a_state_dict)
-                c.load_state_dict(c_state_dict)
-                self.meta_controller.actors_target[i] = deepcopy(a)
-                self.meta_controller.critics_target[i] = deepcopy(c)
+            # prefix = 'meta'
+            # iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
+            # for i, (a, c) in enumerate(iterator):
+            #     a_state_dict = th.load(load_path + prefix + '_actor_{}.pth'.format(i)).state_dict()
+            #     c_state_dict = th.load(load_path + prefix + '_critic_{}.pth'.format(i)).state_dict()
+            #     a.load_state_dict(a_state_dict)
+            #     c.load_state_dict(c_state_dict)
+            #     self.meta_controller.actors_target[i] = deepcopy(a)
+            #     self.meta_controller.critics_target[i] = deepcopy(c)
         else:
             print('Load path is empty!')
             raise NotImplementedError
@@ -182,20 +182,20 @@ class HieTrainer:
             for i, (a, c) in enumerate(iterator):
                 th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
                 th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
-            prefix = 'meta'
-            iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
-            for i, (a, c) in enumerate(iterator):
-                th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
-                th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
+            # prefix = 'meta'
+            # iterator = zip(self.meta_controller.actors, self.meta_controller.critics)
+            # for i, (a, c) in enumerate(iterator):
+            #     th.save(a, save_path + prefix + '_actor_{}.pth'.format(i))
+            #     th.save(c, save_path + prefix + '_critic_{}.pth'.format(i))
         else:
             print('Save path is empty!')
             raise NotImplementedError
 
-    def scalars(self, key, value, episode):
-        self.writer.add_scalars(key, value, episode)
+    def scalars(self, key, value, step):
+        self.writer.add_scalars(key, value, step)
 
-    def scalar(self, key, value, episode):
-        self.writer.add_scalar(key, value, episode)
+    def scalar(self, key, value, step):
+        self.writer.add_scalar(key, value, step)
 
     def close(self):
         if self.writer is not None:
