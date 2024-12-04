@@ -11,9 +11,9 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
     # Environment
-    parser.add_argument("--size", type=int, default=20, help="range of grid environment")
+    parser.add_argument("--size", type=int, default=100, help="range of grid environment")
     parser.add_argument("--num-agents", type=int, default=1, help="number of the agent (drone or car)")
-    parser.add_argument("--num-orders", type=int, default=2, help="number of tasks (the pair of <m,b>)")
+    parser.add_argument("--num-orders", type=int, default=20, help="number of tasks (the pair of <m,b>)")
     parser.add_argument("--num-stones", type=int, default=0, help="number of barriers")
     parser.add_argument("--num-episodes", type=int, default=int(1e6), help="number of episodes")
     parser.add_argument('--memory-length', type=int, default=int(1e6), help='number of experience replay pool')
@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
     parser.add_argument('--tau', default=0.001, type=float, help='rate of soft update')
     parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
-    parser.add_argument("--num-units", type=int, default=64, help="number of units in the mlp")
+    parser.add_argument("--num-units", type=int, default=1024, help="number of units in the mlp")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default='train', help="name of the experiment")
     parser.add_argument("--index", type=str, default='0', help="name of the experiment")
@@ -57,7 +57,7 @@ def train(env, trainer, num_episodes, save_rate, max_len, num_agents, num_orders
     start_time = time.time()
 
     step = 0
-    rew_stats, sr_stats = [], []
+    rew_stats, sr_stats, occ_stats = [], [], []
     for episode in range(1, num_episodes + 1):
         obs_n, done, terminated = reset(env, num_agents, num_orders)
 
@@ -68,7 +68,6 @@ def train(env, trainer, num_episodes, save_rate, max_len, num_agents, num_orders
             act_n = trainer.select_action(obs_n, t=step)
             # Step the env and return outputs
             next_obs_n, rew_n, done_n, terminated = env.step(act_n)
-            # print(count, rew_n)
             # Store the experience for controller
             trainer.add(obs_n, act_n, next_obs_n, rew_n, done_n)
             # Update controller
@@ -84,32 +83,42 @@ def train(env, trainer, num_episodes, save_rate, max_len, num_agents, num_orders
                 break
 
         sr_stats.append(int(done and not terminated))
+        occ_stats.append(env.dot())
         rew_stats.append(np.sum(episode_rew, axis=0))
+
         if episode % save_rate == 0:
             mean_sr = np.mean(sr_stats)
+            mean_occ = np.mean(occ_stats, axis=0)
             mean_rew = np.sum(rew_stats, axis=0)
+            decay_value = trainer.controller.decay(t=step)
+
             print('Episode:{:>7d}, Step:{:>7d}'.format(episode, step), end=', ')
-            value = {}
-            for i, r in enumerate(mean_rew):
-                value['agent_'+str(i)] = r
-                print('Rew_{}:{:>+7.2f}'.format(i, r), end=', ')
-            value['total'] = sum(mean_rew)
-            print('SR:{:>5.3f}'.format(mean_sr), end=', ')
-            trainer.scalars(key='reward', value=value, episode=episode)
-            trainer.scalar(key='sr', value=mean_sr, episode=episode)
+            print('Decay:{:>5.3f}'.format(decay_value), end=', ')
+            value_rew, value_occ = {}, {}
+            for i, (r, o) in enumerate(zip(mean_rew, mean_occ)):
+                value_rew['agent_'+str(i)] = r
+                value_occ['agent_'+str(i)] = o
+                print('Rew_{}:{:>+7.1f}'.format(i, r), end=', ')
+                print('Occ_{}:{:>6.2f}'.format(i, o), end=', ')
+            value_rew['total'] = sum(mean_rew)
+            print('SR:{:>5.2f}'.format(mean_sr), end=', ')
+
+            trainer.scalars(key='reward', value=value_rew, episode=episode)
+            trainer.scalars(key='dot', value=value_occ, episode=episode)
+            trainer.scalars(key='sr', value={'sr': mean_sr, 'decay': decay_value}, episode=episode)
 
             end_time = time.time()
             print('Time: {:>6.3f}'.format(end_time - start_time))
             start_time = end_time
-            rew_stats, sr_stats = [], []
-
+            rew_stats, sr_stats, occ_stats = [], [], []
             # Save the model every fixed several episodes.
             trainer.save_model()
 
 
 def make_exp_id(args):
-    return 'exp_{}_{}:{}_{}_{}_{}_{}_{}_{}_{}'.format(
+    return 'exp_{}_{}({}_{}_{}_{}_{}_{}_{}_{}_{})'.format(
         args.exp_name, args.index,
+        args.size,
         args.num_agents, args.num_orders, args.num_stones,
         args.seed,
         args.a_lr, args.c_lr,
@@ -144,7 +153,7 @@ def main():
         trainer=trainer,
         num_episodes=args.num_episodes,
         save_rate=args.save_rate,
-        max_len=args.num_orders*100,
+        max_len=args.num_orders*50,
         num_agents=args.num_agents,
         num_orders=args.num_orders,
     )

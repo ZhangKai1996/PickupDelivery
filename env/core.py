@@ -54,6 +54,7 @@ class Stone(Entity):
 class Agent(Entity):
     def __init__(self, **kwargs):
         super(Agent, self).__init__(**kwargs)
+        self.end_state = None
         self.movable = True
         self.orders = []
         self.dist = 0.0
@@ -61,14 +62,16 @@ class Agent(Entity):
     def status(self):
         return '>>>{}: ({},{:>6.2f})'.format(self.name, self.mass, self.dist)
 
+    def set_end_state(self, state):
+        self.end_state = deepcopy(state)
+
     def update(self):
         if self.last_state is None:
             return
         self.dist += distance(self.last_state, self.state)
 
     def is_empty(self):
-        if len(self.orders) <= 0:
-            return True
+        if len(self.orders) <= 0: return True
         return all([task.is_finished() for task in self.orders])
 
     @property
@@ -81,6 +84,7 @@ class Agent(Entity):
 
     def clear(self):
         super().clear()
+        self.end_state = None
         self.dist = 0.0
         self.orders = []
 

@@ -1,8 +1,7 @@
 import gym
-import numpy as np
 from gym import spaces
 
-from env.core import Agent, Order, Destination, Stone
+from env.core import Agent, Order, Destination, Stone, Entity
 from env.utils import *
 from env.rendering import EnvRender
 
@@ -24,24 +23,31 @@ class CityEnv(gym.Env):
         self.clock = 0
 
         # configure spaces
-        self.act_space_meta = spaces.Discrete(args.num_agents)
-        self.obs_space_meta = spaces.Box(low=-1, high=+1, shape=(12,), dtype=np.float32)
         self.act_space_ctrl = spaces.Discrete(4)
-        self.obs_space_ctrl = spaces.Box(low=-1, high=+1, shape=(12,), dtype=np.float32)
-
+        self.obs_space_ctrl = spaces.Box(low=-args.size,
+                                         high=+args.size,
+                                         shape=(2*args.num_orders,),
+                                         dtype=np.float32)
         self.cv_render = None
+
+    def dot(self):
+        return [sum([int(order.is_finished()) for order in agent.orders])
+                for agent in self.agents]
 
     def reset(self, render=False, **kwargs):
         self.clock = 0
 
         positions = list(range(self.size * self.size))
         np.random.shuffle(positions)
-        poses = positions[:self.args.num_agents]  # random properties for agents
-        positions = positions[self.args.num_agents:]
+
+        poses = positions[:self.args.num_agents*2]  # random properties for agents
+        positions = positions[self.args.num_agents*2:]
         for i, agent in enumerate(self.agents):
             agent.clear()
-            coord = state2coord(poses[i], self.size)
+            coord = state2coord(poses[i*2], self.size)
             agent.set_state(state=np.array(coord))
+            coord = state2coord(poses[i*2+1], self.size)
+            agent.set_end_state(state=np.array(coord))
 
         poses = positions[:self.args.num_stones]  # random properties for stones
         positions = positions[self.args.num_stones:]
@@ -64,24 +70,29 @@ class CityEnv(gym.Env):
             self.cv_render.initialize()
         return True
 
-    def step(self, action_n, **kwargs):
+    def step(self, action_n, verbose=False, **kwargs):
         self.clock += 1
+        obs_n = []
         for i, agent in enumerate(self.agents):
-            if not agent.is_empty():
-                action = np.argmax(action_n[i])
-                self.__execute_action(agent, action)
+            obs_n.append(self.__observation(agent))
+            action = np.argmax(action_n[i])
+            self.__execute_action(agent, action)
 
         next_obs_n, reward_n, done_n, terminated_n = [], [], [], []
-        for agent in self.agents:
-            reward, done, terminated = self.__reward(agent)
-            next_obs_n.append(self.__observation(agent))
-            reward_n.append(reward)
+        for i, (agent, obs) in enumerate(zip(self.agents, obs_n)):
+            done, is_coin = self.__update_orders(agent)
+            next_obs = self.__observation(agent)
+            reward, terminated = self.__reward(obs, next_obs, agent, done, is_coin)
+            if verbose:
+                print('\t', obs, next_obs, reward, is_coin, done)
             done_n.append(done)
+            reward_n.append(reward)
+            next_obs_n.append(next_obs)
             terminated_n.append(terminated)
-        # reward_n = [sum(reward_n) for _ in self.agents]
         return np.array(next_obs_n), reward_n, done_n, any(terminated_n)
 
     def __execute_action(self, agent, action):
+        # if agent.is_empty(): return False
         if not agent.movable: return False
 
         motions = np.array([[+0, +1], [-1, +0], [+1, +0], [+0, -1]])
@@ -94,42 +105,53 @@ class CityEnv(gym.Env):
         agent.update()
         return False
 
-    def __reward(self, agent):
-        # Agent are penalized for collisions by stones
-        for stone in self.stones:
-            if distance(stone.state, agent.state) <= 0:
-                return -100.0, False, True
-        # Agent are penalized for collisions between agents
-        for other in self.agents:
-            if other == agent:
-                continue
-            if distance(other.state, agent.state) <= 0:
-                return -100.0, False, True
-
-        # Agent are rewarded based on minimum agent distance to each landmark
-        done, rew, dists = [], 0.0, []
+    def __update_orders(self, agent):
+        done, is_coin = [], False
         for order in agent.orders:
             if order.is_finished():
                 done.append(True)
                 continue
-
             if not order.is_picked():
-                dist = distance(order.merchant.state, agent.state)
-                if dist <= 0:
+                if distance(order.merchant.state, agent.state) <= 0:
                     order.merchant.update(clock=self.clock)
-                    rew = 1.0
-                dists.append(dist)
-            else:
-                dist = distance(order.buyer.state, agent.state)
-                if dist <= 0:
+                    is_coin = True
+            elif distance(order.buyer.state, agent.state) <= 0:
                     order.buyer.update(clock=self.clock)
-                    rew = 1.0
-                dists.append(dist)
+                    is_coin = True
             done.append(order.is_finished())
+        done = all(done) and distance(agent.end_state, agent.state) <= 0
+        return done, is_coin
 
-        if all(done): rew = +100.0
-        if rew <= 0.0 and len(dists) > 0: rew -= min(dists) * 0.1
-        return rew, all(done), False
+    def __reward(self, obs, next_obs, agent, done, is_coin):
+        # Agent are rewarded for arriving the goal state
+        if done: return +100.0, False
+        if is_coin: return +100.0, False
+        # Agent are penalized for collisions by stones
+        for stone in self.stones:
+            if distance(stone.state, agent.state) <= 0:
+                return -100.0, True
+        # Agent are penalized for collisions between agents
+        for other in self.agents:
+            if other == agent: continue
+            if distance(other.state, agent.state) <= 0:
+                return -100.0, True
+        # Agent are rewarded based on minimum agent distance to each landmark
+        # return -1.0, False
+
+        dists1 = []
+        for i, x in enumerate(obs):
+            if i % 2 == 1:
+                if x == 0 and obs[i-1] == 0:
+                    continue
+                dists1.append(abs(x) + abs(obs[i-1]))
+        dists2 = []
+        for i, x in enumerate(next_obs):
+            if i % 2 == 1:
+                if x == 0 and obs[i-1] == 0:
+                    continue
+                dists2.append(abs(x) + abs(next_obs[i-1]))
+        rew = -0.5 if min(dists1) > min(dists2) else -1.0
+        return rew, False
 
     def observation_meta(self):
         entity_pos = [agent.state / self.size for agent in self.agents]
@@ -145,20 +167,24 @@ class CityEnv(gym.Env):
 
     def __observation(self, agent):
         pos = agent.state
+
         # get positions of all entities in this agent's reference frame
-        entity_pos = []
+        entity_pos_1, entity_pos_2 = [], []
         for order in agent.orders:
             if order.is_finished():
-                entity_pos.append(np.zeros((self.dim_p + 1, )))
-                entity_pos.append(np.zeros((self.dim_p + 1,)))
+                entity_pos_2.append(np.zeros((self.dim_p, )))
                 continue
 
             if not order.is_picked():
-                entity_pos.append(list(order.merchant.state - pos) + [float(order.merchant.occupied is not None), ])
-                entity_pos.append(np.zeros((self.dim_p + 1,)))
+                entity_pos_1.append(order.merchant.state - pos)
             else:
-                entity_pos.append(np.zeros((self.dim_p + 1,)))
-                entity_pos.append(list(order.buyer.state - pos) + [float(order.buyer.occupied is not None), ])
+                entity_pos_1.append(order.buyer.state - pos)
+
+        # get positions of end point if both all orders are finished
+        if len(entity_pos_1) <= 0:
+            entity_pos = [agent.end_state - pos, ] + entity_pos_2[1:]
+        else:
+            entity_pos = entity_pos_1 + entity_pos_2
 
         # communication of all other agents
         other_pos = [other.state - pos for other in self.agents if other != agent]

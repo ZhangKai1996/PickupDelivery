@@ -4,6 +4,7 @@ import shutil
 import torch as th
 
 device = th.device('cuda') if th.cuda.is_available() else th.device('cpu')
+# device = th.device("mps" if th.backends.mps.is_available() else "cpu")
 FloatTensor = th.FloatTensor if not th.cuda.is_available() else th.cuda.FloatTensor
 ByteTensor = th.ByteTensor if not th.cuda.is_available() else th.cuda.ByteTensor
 

@@ -3,7 +3,6 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from torch.autograd import Variable
 
 from .memory import ReplayMemory
 from .network import Critic, Actor
@@ -42,7 +41,7 @@ class Controller(Trainer):
         self.dim_obs = dim_obs
 
         self.kwargs = kwargs
-        self.schedule = LinearSchedule(int(1e7), 0.1, 1)
+        self.schedule = LinearSchedule(int(5e8), 0.1, 1)
         self.memory = ReplayMemory(kwargs['memory_length'])
 
         self.actors, self.critics = [], []
@@ -76,24 +75,36 @@ class Controller(Trainer):
             raise NotImplementedError
         return [dim_input, dim_output]
 
+    def decay(self, t):
+        return self.schedule.value(t)
+
     def add_experience(self, obs_n, act_n, next_obs_n, rew_n, done_n):
         self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
 
     def act(self, obs_n, t=None):
-        explore = t is not None and np.random.random() <= self.schedule.value(t)
+        explore = t is not None and np.random.random() <= self.decay(t)
+        if explore:
+            logit = np.random.rand(self.n_agents, self.n_actions)
+            act_n = th.from_numpy(logit).type(FloatTensor)
+        else:
+            obs_n = th.from_numpy(obs_n).type(FloatTensor)
+            act_n = th.zeros(self.n_agents, self.n_actions)
+            for i in range(self.n_agents):
+                obs = obs_n[i, :].detach().unsqueeze(0)
+                act_n[i, :] = self.actors[i](obs).squeeze()
+        act_n = onehot_from_logit(act_n)
 
-        obs_n = th.from_numpy(obs_n).type(FloatTensor)
-        act_n = th.zeros(self.n_agents, self.n_actions)
-        for i in range(self.n_agents):
-            obs = obs_n[i, :].detach().unsqueeze(0)
-            act_n[i, :] = self.actors[i](obs).squeeze()
-
-        act_n = gumbel_softmax(act_n, hard=True) if explore else onehot_from_logit(act_n)
+        # obs_n = th.from_numpy(obs_n).type(FloatTensor)
+        # act_n = th.zeros(self.n_agents, self.n_actions)
+        # for i in range(self.n_agents):
+        #     obs = obs_n[i, :].detach().unsqueeze(0)
+        #     act_n[i, :] = self.actors[i](obs).squeeze()
+        # act_n = gumbel_softmax(act_n, hard=True) if explore else onehot_from_logit(act_n)
         return act_n.data.cpu().numpy()
 
     def update(self, t):
-        if t <= self.kwargs['learning_start']:
-            return None, None
+        if t <= self.kwargs['learning_start']: return None, None
+        # if t % 10 != 0: return None, None
 
         batch_size = self.kwargs['batch_size']
         gamma = self.kwargs['gamma']

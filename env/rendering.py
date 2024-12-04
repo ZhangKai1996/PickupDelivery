@@ -87,7 +87,7 @@ class EnvRender:
         self.__draw_agents(size, color=(255, 0, 0), traj=False)
         self.__draw_stones(size)
         self.__draw_orders(size)
-        cv2.imwrite('trained/base_image.png', self.base_img)
+        # cv2.imwrite('trained/base_image.png', self.base_img)
 
     def __draw_agents(self, size, color=None, traj=True):
         if color is None: color = (0, 0, 255)
@@ -102,7 +102,10 @@ class EnvRender:
                     last_pos = self.pos_dict[last_pos]
                     cv2.line(self.base_img, last_pos, pos, color, thickness=1)
             else:
+                end_pos = coord2state(agent.end_state, size)
+                end_pos = self.pos_dict[end_pos]
                 cv2.circle(self.base_img, pos, entity_radius, color, thickness=-1)
+                cv2.circle(self.base_img, end_pos, entity_radius, (0, 255, 0), thickness=-1)
 
     def __draw_stones(self, size, color=None):
         if color is None: color = (0, 0, 0)
@@ -142,7 +145,7 @@ class EnvRender:
 
         if show:
             cv2.imshow('basic image', base_img)
-            if cv2.waitKey(1) == 113:
+            if cv2.waitKey(0) == 113:
                 cv2.destroyAllWindows()
         self.video.write(base_img)
 
