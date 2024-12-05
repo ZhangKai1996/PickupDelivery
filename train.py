@@ -11,9 +11,9 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser("Reinforcement Learning experiments for multi-agent environments")
     # Environment
-    parser.add_argument("--size", type=int, default=100, help="range of grid environment")
+    parser.add_argument("--size", type=int, default=500, help="range of grid environment")
     parser.add_argument("--num-agents", type=int, default=1, help="number of the agent (drone or car)")
-    parser.add_argument("--num-orders", type=int, default=20, help="number of tasks (the pair of <m,b>)")
+    parser.add_argument("--num-orders", type=int, default=1, help="number of tasks (the pair of <m,b>)")
     parser.add_argument("--num-stones", type=int, default=0, help="number of barriers")
     parser.add_argument("--num-episodes", type=int, default=int(1e6), help="number of episodes")
     parser.add_argument('--memory-length', type=int, default=int(1e6), help='number of experience replay pool')
@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument("--c-lr", type=float, default=1e-3, help="learning rate for Critic Adam optimizer")
     parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
     parser.add_argument('--tau', default=0.001, type=float, help='rate of soft update')
-    parser.add_argument("--batch-size", type=int, default=32, help="number of episodes to optimize at the same time")
+    parser.add_argument("--batch-size", type=int, default=256, help="number of episodes to optimize at the same time")
     parser.add_argument("--num-units", type=int, default=1024, help="number of units in the mlp")
     # Checkpointing
     parser.add_argument("--exp-name", type=str, default='train', help="name of the experiment")
@@ -153,7 +153,7 @@ def main():
         trainer=trainer,
         num_episodes=args.num_episodes,
         save_rate=args.save_rate,
-        max_len=args.num_orders*50,
+        max_len=args.num_orders*args.size*3,
         num_agents=args.num_agents,
         num_orders=args.num_orders,
     )

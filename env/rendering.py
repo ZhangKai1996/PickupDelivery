@@ -145,7 +145,7 @@ class EnvRender:
 
         if show:
             cv2.imshow('basic image', base_img)
-            if cv2.waitKey(0) == 113:
+            if cv2.waitKey(1) == 113:
                 cv2.destroyAllWindows()
         self.video.write(base_img)
 

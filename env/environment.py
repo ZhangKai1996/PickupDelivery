@@ -125,7 +125,7 @@ class CityEnv(gym.Env):
     def __reward(self, obs, next_obs, agent, done, is_coin):
         # Agent are rewarded for arriving the goal state
         if done: return +100.0, False
-        if is_coin: return +100.0, False
+        if is_coin: return +0.0, False
         # Agent are penalized for collisions by stones
         for stone in self.stones:
             if distance(stone.state, agent.state) <= 0:
@@ -150,7 +150,8 @@ class CityEnv(gym.Env):
                 if x == 0 and obs[i-1] == 0:
                     continue
                 dists2.append(abs(x) + abs(next_obs[i-1]))
-        rew = -0.5 if min(dists1) > min(dists2) else -1.0
+        rew = -1.0 if min(dists1) > min(dists2) else -2.0
+        # rew = -min(dists2) * 0.1
         return rew, False
 
     def observation_meta(self):

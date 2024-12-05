@@ -77,7 +77,7 @@ def main():
         num_episodes=int(1e4),
         num_agents=args.num_agents,
         num_orders=args.num_orders,
-        max_len=args.num_orders*50,
+        max_len=args.num_orders*args.size*4,
         render=True
     )
     env.close()
