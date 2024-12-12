@@ -2,17 +2,15 @@ import os
 import shutil
 
 import torch as th
+import torch.nn.functional as F
 
 device = th.device('cuda') if th.cuda.is_available() else th.device('cpu')
-# device = th.device("mps" if th.backends.mps.is_available() else "cpu")
 FloatTensor = th.FloatTensor if not th.cuda.is_available() else th.cuda.FloatTensor
 ByteTensor = th.ByteTensor if not th.cuda.is_available() else th.cuda.ByteTensor
 
 
-def get_folder(folder, root='trained', makedir=True):
-    """
-    数据记录（计算图、logs和网络参数）的保存文件路径
-    """
+def get_folder(folder, root='trained', makedir=False):
+    """ 数据记录（计算图、logs和网络参数）的保存文件路径 """
     folder = os.path.join(root, folder)
     if os.path.exists(folder):
         if makedir:
@@ -54,3 +52,21 @@ class LinearSchedule(object):
     def value(self, t):
         fraction = min(float(t) / self.time_steps, 1.0)
         return self.initial_p + fraction * (self.final_p - self.initial_p)
+
+
+def onehot_from_logit(logit):
+    return F.one_hot(logit.argmax(dim=-1), num_classes=logit.shape[-1])
+
+
+def sample_gumbel(shape, eps=1e-20):
+    u = th.rand(shape)
+    return -th.log(-th.log(u + eps) + eps)
+
+
+def gumbel_softmax(logit, temperature=1.0, hard=False):
+    y = logit + sample_gumbel(logit.shape)
+    y = F.softmax(y / temperature, dim=-1)
+    if hard:
+        y_hard = onehot_from_logit(y)
+        y = (y_hard - y).detach() + y
+    return y

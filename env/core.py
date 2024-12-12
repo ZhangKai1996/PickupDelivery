@@ -10,6 +10,7 @@ class Entity(object):
         self.movable = movable
 
         self.state = None
+        self.end_state = None
         self.last_state = None
 
     def set_state(self, state):
@@ -18,8 +19,12 @@ class Entity(object):
     def set_last_state(self, state):
         self.last_state = deepcopy(state)
 
+    def set_end_state(self, state):
+        self.end_state = deepcopy(state)
+
     def clear(self):
         self.state = None
+        self.end_state = None
         self.last_state = None
 
 
@@ -29,6 +34,7 @@ class Destination(Entity):
         super(Destination, self).__init__(**kwargs)
         self.movable = False
         self.occupied = None
+        self.arrived = False
 
     def update(self, clock):
         self.occupied = clock
@@ -39,6 +45,7 @@ class Destination(Entity):
     def clear(self):
         super().clear()
         self.occupied = None
+        self.arrived = False
 
 
 class Stone(Entity):
@@ -54,39 +61,65 @@ class Stone(Entity):
 class Agent(Entity):
     def __init__(self, **kwargs):
         super(Agent, self).__init__(**kwargs)
-        self.end_state = None
         self.movable = True
-        self.orders = []
+
         self.dist = 0.0
+        self.orders = []
+        self.sequence = []
+        self.cur_idx = 0
 
-    def status(self):
-        return '>>>{}: ({},{:>6.2f})'.format(self.name, self.mass, self.dist)
+    def cur_state(self):
+        if self.cur_idx >= len(self.sequence): return self.end_state
+        return self.sequence[self.cur_idx].state
 
-    def set_end_state(self, state):
-        self.end_state = deepcopy(state)
+    def set_sequence(self, seq=None):
+        self.sequence = []
+        for order in self.orders:
+            self.sequence.append(order.merchant)
+            self.sequence.append(order.buyer)
+
+        # print([p.name for p in self.sequence], end='-->')
+        if seq is not None:
+            ret = {v: i for i, v in enumerate(seq)}
+            self.sequence = [self.sequence[ret[k]]
+                             for k in sorted(ret.keys(), reverse=True)]
+        # print([p.name for p in self.sequence])
 
     def update(self):
-        if self.last_state is None:
-            return
-        self.dist += distance(self.last_state, self.state)
+        if self.last_state is not None:
+            self.dist += distance(self.last_state, self.state)
+        if self.is_sequence_over(): return False
+        if self.cur_idx >= len(self.sequence):
+            is_arrived = distance(self.state, self.end_state) <= 0
+        else:
+            point = self.sequence[self.cur_idx]
+            is_arrived = distance(self.state, point.state) <= 0
+            point.arrived = is_arrived
+
+        if is_arrived: self.cur_idx += 1
+        return is_arrived
 
     def is_empty(self):
         if len(self.orders) <= 0: return True
         return all([task.is_finished() for task in self.orders])
+
+    def is_sequence_over(self):
+        return self.cur_idx >= len(self.sequence) + 1
 
     @property
     def mass(self):
         mass = 0
         for order in self.orders:
             if order.is_finished(): continue
-            if order.is_picked(): mass += 1
+            if order.is_picked(): mass += order.mass
         return mass
 
     def clear(self):
         super().clear()
-        self.end_state = None
         self.dist = 0.0
         self.orders = []
+        self.sequence = []
+        self.cur_idx = 0
 
 
 class Order:
@@ -94,33 +127,18 @@ class Order:
         self.name = name
         self.clock = clock
         self.mass = 1.0
+
         self.merchant = merchant
         self.buyer = buyer
         self.agent = None
 
-    def status(self):
-        status = [self.name, ]
-        if self.is_finished():
-            status += ['Finished', str(self.pick_time()), str(self.delivery_time())]
-        elif self.is_picked():
-            status += ['Picked', str(self.pick_time()), '-1']
-        elif self.is_assigned():
-            status += ['Assigned', '-1', '-1']
-        else:
-            status += ['Unassigned', '-1', '-1']
-        return ','.join(status)
-
     def pick_time(self):
-        m = self.merchant
-        if m.occupied is None:
-            return None
-        return m.occupied - self.clock
+        if self.merchant.occupied is None: return None
+        return self.merchant.occupied - self.clock
 
     def delivery_time(self):
-        b = self.buyer
-        if b.occupied is None:
-            return None
-        return b.occupied - self.clock
+        if self.buyer.occupied is None: return None
+        return self.buyer.occupied - self.clock
 
     def is_assigned(self):
         return self.agent is not None
@@ -129,7 +147,9 @@ class Order:
         return self.is_assigned() and self.merchant.occupied is not None
 
     def is_finished(self):
-        return self.is_picked() and self.buyer.occupied is not None
+        if not self.is_picked() or self.buyer.occupied is None:
+            return False
+        return self.merchant.occupied < self.buyer.occupied
 
     def clear(self):
         self.agent = None
