@@ -33,6 +33,9 @@ class CityEnv(gym.Env):
         self.obs_space_tp = spaces.Box(low=-args.size, high=+args.size,
                                        shape=(2*args.num_agents,),
                                        dtype=np.float32)
+        self.obs_space_sl = spaces.Box(low=-args.size, high=+args.size,
+                                       shape=(5,),
+                                       dtype=np.float32)
         self.cv_render = None
 
     def dot(self):

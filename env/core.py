@@ -128,9 +128,9 @@ class Order:
         self.clock = clock
         self.mass = 1.0
 
+        self.agent = None
         self.merchant = merchant
         self.buyer = buyer
-        self.agent = None
 
     def pick_time(self):
         if self.merchant.occupied is None: return None
@@ -152,6 +152,7 @@ class Order:
         return self.merchant.occupied < self.buyer.occupied
 
     def clear(self):
+        self.clock = 0
         self.agent = None
         self.merchant.clear()
         self.buyer.clear()

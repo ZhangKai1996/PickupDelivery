@@ -13,7 +13,7 @@ def train(env, trainer, num_episodes, num_agents, num_orders, max_len, render=Tr
         initialize(env, num_agents, num_orders, render=render)
 
         obs_n_pf = env.observation(label='pf')
-        sequences = trainer.select_action(obs_n_pf, t=0, label='pf')
+        sequences = trainer.select_action(obs_n_pf, label='pf')
         env.path_planning(sequences)
         # env.path_planning()
 
@@ -41,18 +41,26 @@ def train(env, trainer, num_episodes, num_agents, num_orders, max_len, render=Tr
 
         count_occ = env.dot()
         episode_rew_sum = np.sum(episode_intrinsic_rew, axis=0)
-        extrinsic_rew_n = [(count_occ[i] - len(env.agents[i].orders)) * 1.0
-                           for i, _ in enumerate(episode_rew_sum)]
+        if done_pf:
+            extrinsic_rew_n = [rew/150 for rew in episode_rew_sum]
+        else:
+            extrinsic_rew_n = [(count_occ[i] - len(env.agents[i].orders)) * 3.0
+                               for i, _ in enumerate(episode_rew_sum)]
+        act_n_sl = np.expand_dims(sequences, axis=-1)
+        obs_n_sl = np.concatenate([obs_n_pf, act_n_sl], axis=2)
+        ext_rew_n = trainer.select_action(obs_n_sl, label='sl')
+        loss = np.mean(np.square(ext_rew_n-extrinsic_rew_n))
+
         occ_stats.append(count_occ)
         int_sr_stats.append(int(done and not terminated))
         ext_sr_stats.append(int(done_pf))
-        int_rew_stats.append(episode_rew_sum)
+        int_rew_stats.append(ext_rew_n)
         ext_rew_stats.append(extrinsic_rew_n)
 
-        print('Episode:{:>5d}, Step:{:>7d}, Done:{}, Done_pf:{}'.format(
-            episode, step, int(done), int(done_pf)), end=', ')
+        print('Episode:{:>5d}, Step:{:>7d}, Done:{}, Done_pf:{}, Loss:{:>5.2f}'.format(
+            episode, step, int(done), int(done_pf), loss), end=', ')
 
-        for i, (int_r, ext_r) in enumerate(zip(episode_rew_sum, extrinsic_rew_n)):
+        for i, (int_r, ext_r) in enumerate(zip(ext_rew_n, extrinsic_rew_n)):
             print('Int_rew_{}:{:>+7.1f}'.format(i, int_r), end=', ')
             print('Ext_rew_{}:{:>+7.1f}'.format(i, ext_r), end=', ')
             print('Ext_occ_{}:{:>6.2f}'.format(i, occ_stats[-1][i]), end=', ')
