@@ -10,7 +10,7 @@ def parse_args():
     # Environment
     parser.add_argument("--size", type=int, default=20, help="range of grid environment")
     parser.add_argument("--num-agents", type=int, default=1, help="number of the agent (drone or car)")
-    parser.add_argument("--num-orders", type=int, default=40, help="number of tasks (the pair of <m,b>)")
+    parser.add_argument("--num-orders", type=int, default=20, help="number of tasks (the pair of <m,b>)")
     parser.add_argument("--num-stones", type=int, default=0, help="number of barriers")
     parser.add_argument("--num-episodes", type=int, default=int(1e6), help="number of episodes")
     parser.add_argument('--memory-length', type=int, default=int(1e6), help='number of experience replay pool')

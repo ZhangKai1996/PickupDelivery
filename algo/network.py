@@ -7,7 +7,7 @@ funcs = {'relu': F.relu, 'tanh': F.tanh, 'softmax': F.softmax}
 
 
 class MLP(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size=64, fn=None):
+    def __init__(self, input_size, output_size, hidden_size=128, fn=None):
         super(MLP, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
@@ -22,7 +22,7 @@ class MLP(nn.Module):
 
 
 class BiRNN1(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size=64, fn=None):
+    def __init__(self, input_size, output_size, hidden_size=128, fn=None):
         super(BiRNN1, self).__init__()
         self.hidden_size = hidden_size
         self.rnn_fw = nn.RNNCell(input_size, hidden_size)
@@ -52,7 +52,7 @@ class BiRNN1(nn.Module):
         return outputs if self.fn is None else self.fn(outputs)
 
 class BiRNN2(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size=64, fn=None):
+    def __init__(self, input_size, output_size, hidden_size=128, fn=None):
         super(BiRNN2, self).__init__()
         self.hidden_size = hidden_size
         self.rnn_fw = nn.RNNCell(input_size, hidden_size)

@@ -83,7 +83,6 @@ class Agent(Entity):
             ret = {v: i for i, v in enumerate(seq)}
             self.sequence = [self.sequence[ret[k]]
                              for k in sorted(ret.keys(), reverse=True)]
-        # print([p.name for p in self.sequence])
 
     def update(self):
         if self.last_state is not None:
@@ -128,9 +127,9 @@ class Order:
         self.clock = clock
         self.mass = 1.0
 
-        self.agent = None
         self.merchant = merchant
         self.buyer = buyer
+        self.agent = None
 
     def pick_time(self):
         if self.merchant.occupied is None: return None
@@ -152,7 +151,6 @@ class Order:
         return self.merchant.occupied < self.buyer.occupied
 
     def clear(self):
-        self.clock = 0
         self.agent = None
         self.merchant.clear()
         self.buyer.clear()

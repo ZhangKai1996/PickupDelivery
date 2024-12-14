@@ -30,7 +30,7 @@ class TAController(Trainer):
         self.dim_act = dim_act
         self.dim_obs = dim_obs
 
-        self.schedule = LinearSchedule(int(1e5), 0.1, 1)
+        self.schedule = LinearSchedule(int(1e4), 0.1, 1)
 
         self.actors, self.critics = [], []
         self.actors_target, self.critics_target = [], []
@@ -74,7 +74,7 @@ class TAController(Trainer):
         return act_n.data.cpu().numpy()
 
     def update(self, t):
-        if t <= int(1e3) or t >= int(1e5): return None, None
+        if t <= int(1e3) or t >= int(1e4): return None, None
 
         c_loss, a_loss = [], []
         for i in range(self.n_agents):
@@ -120,6 +120,7 @@ class PFController(Trainer):
         self.dim_obs = dim_obs
         self.dim_act = dim_act
 
+        self.batch_size = 256
         self.schedule = LinearSchedule(int(2e4), 0.1, 1)
 
         self.actors, self.critics = [], []
@@ -300,53 +301,3 @@ class TPController(Trainer):
                 soft_update(self.critics_target[i], self.critics[i], self.tau)
                 soft_update(self.actors_target[i], self.actors[i], self.tau)
         return c_loss, a_loss
-
-
-class SLController(Trainer):
-    def __init__(self, n_agents, dim_obs, dim_act, **kwargs):
-        super(SLController, self).__init__(**kwargs)
-        self.n_agents = n_agents
-        self.dim_obs = dim_obs
-        self.dim_act = dim_act
-
-        self.actors = []
-        self.optimizers = []
-        for i in range(n_agents):
-            actor = BiRNN2(input_size=dim_obs[0], output_size=dim_act)
-            self.actors.append(actor)
-            self.optimizers.append(th.optim.Adam(actor.parameters(), lr=kwargs['a_lr']))
-        self.mse_loss = nn.MSELoss()
-
-    def dim_input(self, batch_size=1):
-        return {'actor': (batch_size,) + self.dim_obs,
-                'critic': (batch_size, (self.dim_obs[0] + self.dim_act) * self.n_agents,)}
-
-    def add_experience(self, obs_n, act_n, next_obs_n, rew_n, done_n):
-        self.memory.push(obs_n, act_n, next_obs_n, rew_n, done_n)
-
-    def act(self, obs_n, t=None):
-        obs_n = th.from_numpy(obs_n).type(FloatTensor)
-        act_n = th.zeros(self.n_agents, self.dim_act)
-        for i in range(self.n_agents):
-            obs = obs_n[i, :].detach().unsqueeze(0)
-            act_n[i, :] = self.actors[i](obs).squeeze()
-        return act_n.data.cpu().numpy()[:, 0]
-
-    def update(self, t):
-        if t <= int(1e2) or t >= int(1e5): return None, None
-
-        losses = []
-        for i in range(self.n_agents):
-            transitions = self.memory.sample(self.batch_size)
-            state_batch = th.from_numpy(transitions[0]).type(FloatTensor)
-            action_batch = th.from_numpy(transitions[1]).type(FloatTensor).unsqueeze(dim=-1)
-            reward_batch = th.from_numpy(transitions[3]).type(FloatTensor).unsqueeze(dim=-1)
-
-            self.optimizers[i].zero_grad()
-            sa_batch = th.cat([state_batch[:, i, :], action_batch[:, i, :]], dim=2)
-            outputs = self.actors[i](sa_batch)
-            loss = self.mse_loss(outputs, reward_batch[:, i, :].detach())
-            loss.backward()
-            self.optimizers[i].step()
-            losses.append(loss.item())
-        return None, losses

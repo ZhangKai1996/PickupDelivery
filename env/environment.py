@@ -33,9 +33,6 @@ class CityEnv(gym.Env):
         self.obs_space_tp = spaces.Box(low=-args.size, high=+args.size,
                                        shape=(2*args.num_agents,),
                                        dtype=np.float32)
-        self.obs_space_sl = spaces.Box(low=-args.size, high=+args.size,
-                                       shape=(5,),
-                                       dtype=np.float32)
         self.cv_render = None
 
     def dot(self):
@@ -210,9 +207,13 @@ class CityEnv(gym.Env):
         raise NotImplementedError
 
     def path_planning(self, sequences=None):
+        orderings = []
         for i, agent in enumerate(self.agents):
             seq = None if sequences is None else sequences[i]
             agent.set_sequence(seq)
+            ordering = [p.name for p in agent.sequence]
+            orderings.append('-->'.join(ordering))
+        return orderings
 
     def task_assignment(self, scheme, **kwargs):
         scheme = np.argmax(scheme, axis=1)

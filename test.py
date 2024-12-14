@@ -6,16 +6,14 @@ from parameters import *
 
 def train(env, trainer, num_episodes, num_agents, num_orders, max_len, render=True):
     step = 0
-
     int_rew_stats, ext_rew_stats = [], []
     int_sr_stats, ext_sr_stats, occ_stats = [], [], []
     for episode in range(1, num_episodes + 1):
         initialize(env, num_agents, num_orders, render=render)
 
         obs_n_pf = env.observation(label='pf')
-        sequences = trainer.select_action(obs_n_pf, t=0, label='pf')
-        env.path_planning(sequences)
-        # env.path_planning()
+        sequences = trainer.select_action(obs_n_pf, label='pf')
+        orderings = env.path_planning(sequences)
 
         done_pf = False
         obs_n, done, terminated = env.observation(label='tp'), False, False
@@ -23,12 +21,14 @@ def train(env, trainer, num_episodes, num_agents, num_orders, max_len, render=Tr
         episode_step = 0
         episode_intrinsic_rew = []
         while True:
+            # Get action from trainer
             act_n = trainer.select_action(obs_n, label='tp')
             # Step the env and return outputs
             next_obs_n, rew_n, done_n, terminated, done_pf = env.step(act_n, verbose=render)
             if render:
                 # print('\t', episode_step, obs_n, np.argmax(act_n, axis=-1), next_obs_n, rew_n, done_n)
-                env.render(mode='Episode:{}, Step:{}'.format(episode, episode_step), show=True)
+                env.render(mode='Episode:{}, Step:{}, Ordering: {}'.format(
+                    episode, episode_step, orderings[0]), show=True)
             obs_n = next_obs_n
 
             step += 1
@@ -41,8 +41,12 @@ def train(env, trainer, num_episodes, num_agents, num_orders, max_len, render=Tr
 
         count_occ = env.dot()
         episode_rew_sum = np.sum(episode_intrinsic_rew, axis=0)
-        extrinsic_rew_n = [(count_occ[i] - len(env.agents[i].orders)) * 1.0
-                           for i, _ in enumerate(episode_rew_sum)]
+        # extrinsic_rew_n = [rew/100 if done_pf else -10.0 for rew in episode_rew_sum]
+        if done_pf:
+            extrinsic_rew_n = [rew/20 for rew in episode_rew_sum]
+        else:
+            extrinsic_rew_n = [(count_occ[i] / len(env.agents[i].orders) - 2) * 10.0
+                               for i, _ in enumerate(episode_rew_sum)]
         occ_stats.append(count_occ)
         int_sr_stats.append(int(done and not terminated))
         ext_sr_stats.append(int(done_pf))

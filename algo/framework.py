@@ -5,7 +5,7 @@ import torch as th
 from torch.utils.tensorboard import SummaryWriter
 
 from algo.misc import get_folder, FloatTensor
-from algo.trainer import TAController, PFController, TPController, SLController
+from algo.trainer import TAController, PFController, TPController
 from algo.visual import net_visual
 
 
@@ -29,17 +29,10 @@ class HieTrainer:
             dim_act=env.act_space_tp.n,
             **kwargs
         )
-        self.sl_controller = SLController(
-            n_agents=num_agents,
-            dim_obs=env.obs_space_sl.shape,
-            dim_act=1,
-            **kwargs
-        )
         # Record the data of meta-controller and controller during training
         self.losses = {'ta': {'actor': [], 'critic': []},
                        'pf': {'actor': [], 'critic': []},
-                       'tp': {'actor': [], 'critic': []},
-                       'sl': {'actor': [], 'critic': []}}
+                       'tp': {'actor': [], 'critic': []}}
         # Build the save path of file, such as graph, log and parameters
         self.__addiction(folder=folder, test=test)
 
@@ -67,7 +60,6 @@ class HieTrainer:
         if folder is None: return
 
         self.path = get_folder(folder, makedir=(not test))
-        # self.path = get_folder(folder)
         if test: return
 
         if self.path['log_path'] is not None:
@@ -85,8 +77,6 @@ class HieTrainer:
             return self.pf_controller
         if label == 'tp':
             return self.tp_controller
-        if label == 'sl':
-            return self.sl_controller
         raise NotImplementedError
 
     def select_action(self, state, label='ta', **kwargs):
@@ -99,24 +89,25 @@ class HieTrainer:
         controller = self.__get_controller(label=label)
 
         c_loss, a_loss = controller.update(t)
-        if a_loss is not None:
-            self.losses[label]['actor'].append(a_loss)
-        if c_loss is not None:
-            self.losses[label]['critic'].append(c_loss)
+        if c_loss is None or a_loss is None:
+            return
+
+        self.losses[label]['critic'].append(c_loss)
+        self.losses[label]['actor'].append(a_loss)
 
         if t % 100 == 0:
-            if len(self.losses[label]['critic']) > 0:
-                # Record and visual the loss value of Actor and Critic
-                mean_c_loss = np.mean(self.losses[label]['critic'], axis=0)
-                value = {'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)}
-                self.scalars(key=label + '_critic_loss', value=value, episode=t)
-                self.losses[label]['actor'] = []
-            if len(self.losses[label]['actor']) > 0:
-                mean_a_loss = np.mean(self.losses[label]['actor'], axis=0)
-                value = {'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)}
-                self.scalars(key=label + '_actor_loss', value=value, episode=t)
-                self.scalar(key=label+'_decay', value=controller.decay(t), episode=t)
-                self.losses[label]['actor'] = []
+            # Record and visual the loss value of Actor and Critic
+            mean_c_loss = np.mean(self.losses[label]['critic'], axis=0)
+            value = {'agent_{}'.format(i + 1): v for i, v in enumerate(mean_c_loss)}
+            self.scalars(key=label + '_critic_loss', value=value, episode=t)
+
+            mean_a_loss = np.mean(self.losses[label]['actor'], axis=0)
+            value = {'agent_{}'.format(i + 1): v for i, v in enumerate(mean_a_loss)}
+            self.scalars(key=label + '_actor_loss', value=value, episode=t)
+            self.scalar(key=label+'_decay', value=controller.decay(t), episode=t)
+
+            self.losses[label]['critic'] = []
+            self.losses[label]['actor'] = []
 
     def __load(self, load_path, label='ta'):
         controller = self.__get_controller(label=label)
@@ -129,23 +120,12 @@ class HieTrainer:
             controller.actors_target[i] = deepcopy(a)
             controller.critics_target[i] = deepcopy(c)
 
-    def __load_sl(self, load_path):
-        controller = self.sl_controller
-        for i, a in enumerate(controller.actors):
-            a_state_dict = th.load(load_path + 'sl_actor_{}.pth'.format(i)).state_dict()
-            a.load_state_dict(a_state_dict)
-
     def __save(self, save_path, label='tp'):
         controller = self.__get_controller(label=label)
         iterator = zip(controller.actors, controller.critics)
         for i, (a, c) in enumerate(iterator):
             th.save(a, save_path + label + '_actor_{}.pth'.format(i))
             th.save(c, save_path + label + '_critic_{}.pth'.format(i))
-
-    def __save_sl(self, save_path):
-        controller = self.sl_controller
-        for i, a in enumerate(controller.actors):
-            th.save(a, save_path + 'sl_actor_{}.pth'.format(i))
 
     def load_model(self, load_path=None, label=None):
         if load_path is None:
@@ -156,29 +136,20 @@ class HieTrainer:
                 self.__load(load_path, label='ta')
                 self.__load(load_path, label='pf')
                 self.__load(load_path, label='tp')
-                self.__load_sl(load_path)
-            elif label == 'sl':
-                self.__load_sl(load_path)
             else:
                 self.__load(load_path, label=label)
         else:
             print('Load path is empty!')
             raise NotImplementedError
 
-    def save_model(self, save_path=None, label=None):
+    def save_model(self, save_path=None):
         if save_path is None:
             save_path = self.path['model_path']
 
         if save_path is not None:
-            if label is None:
-                self.__save(save_path, label='ta')
-                self.__save(save_path, label='pf')
-                self.__save(save_path, label='tp')
-                self.__save_sl(save_path)
-            elif label == 'sl':
-                self.__save_sl(save_path)
-            else:
-                self.__save(save_path, label=label)
+            self.__save(save_path, label='ta')
+            self.__save(save_path, label='pf')
+            self.__save(save_path, label='tp')
         else:
             print('Save path is empty!')
             raise NotImplementedError
